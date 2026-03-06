@@ -130,16 +130,47 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `/health` | GET | Health check (mode, version) |
 | `/metrics` | GET | Scan statistics (verdicts, cache hits, blocks, queue depth) |
 
+## Docker Images
+
+Pre-built images are published to GHCR on every push to `main` and on version tags.
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/ar-io/ar-io-content-scanner:main
+
+# Or pin to a specific version
+docker pull ghcr.io/ar-io/ar-io-content-scanner:0.1.0
+```
+
+### CI/CD
+
+The GitHub Actions workflow (`.github/workflows/build-and-push.yml`) runs tests then builds and pushes automatically:
+
+| Trigger | Image Tags |
+|---------|------------|
+| Push to `main` | `:main`, `:sha-<commit>` |
+| Tag `v1.0.0` | `:1.0.0`, `:1.0`, `:sha-<commit>` |
+| Pull request | Tests only, no image push |
+
+### Creating a Release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+This publishes versioned images that operators can pin to.
+
 ## Development
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt -r requirements-dev.txt
 
-# Run tests (64+ tests)
+# Run tests
 python3 -m pytest tests/ -v
 
-# Build Docker image
+# Build Docker image locally
 docker build -t content-scanner .
 
 # Run locally
