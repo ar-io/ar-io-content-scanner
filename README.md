@@ -5,33 +5,31 @@ A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io
 ## How It Works
 
 ```
-ar-io-node                          Content Scanner
-----------                          ---------------
-User requests content
-  |
-Cache miss -> fetch from Arweave
-  |
-Cache write -> emit DATA_CACHED
-  webhook POST ------------------>  POST /scan
-                                      |
-Content served to user                Enqueue for async scan
-(no latency added)                    |
-                                    Worker dequeues
-                                      |
-                              GET /raw/:id <---- Fetch HTML from gateway
-                                      |
-                                    Parse HTML
-                                    Run 4 detection rules
-                                    Score with XGBoost ML model
-                                      |
-                              malicious?
-                                |           |
-                              yes           no
-                                |           |
-                    PUT /ar-io/admin/    Cache as clean
-                      block-data          done
-                                |
-                    All future requests -> 404
+                    ar-io-node                     Content Scanner
+                    ----------                     ---------------
+
+  User request ──> Cache miss ──> Fetch from Arweave
+                        |
+                   Cache write
+                        |
+                   DATA_CACHED ──────────────────> POST /scan
+                        |                               |
+                   Serve content                   Enqueue scan
+                   (no delay)                           |
+                                                   Worker picks up
+                                                        |
+                                               GET /raw/:id ──> Fetch HTML
+                                                        |
+                                                   Parse HTML
+                                                   Run 4 rules + ML
+                                                        |
+                                                ┌── malicious? ──┐
+                                                |                |
+                                               yes               no
+                                                |                |
+                                          PUT block-data    Cache clean
+                                                |
+                                          Future requests ──> 404
 ```
 
 **Tradeoff:** The first user to access malicious content sees it. All subsequent requests are blocked. This is acceptable because phishing pages need repeat victims, and blocking after first access eliminates the attack surface.
@@ -80,7 +78,7 @@ Each rule requires 2+ independent signals (conjunctive logic) to ensure near-zer
 | Rule | Signal A | Signal B |
 |------|----------|----------|
 | **Seed Phrase Harvesting** | 8+ text inputs | Seed phrase terminology in visible text |
-| **External Credential Form** | Form with password input | Form action is an absolute URL (http/https) |
+| **External Credential Form** | Password input | Form action is absolute URL, or JS exfil patterns with external URL |
 | **Wallet Impersonation** | Crypto brand in title/headings/img alt | Password input or key-phrase terminology |
 | **Obfuscated Loader** | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
 
