@@ -1,0 +1,33 @@
+services:
+  content-scanner:
+    build: .
+    container_name: content-scanner
+    ports:
+      - "3100:3100"
+    environment:
+      GATEWAY_URL: "http://core:4000"
+      ADMIN_API_KEY: "${ADMIN_API_KEY}"
+      SCANNER_MODE: "${SCANNER_MODE:-dry-run}"
+      SCANNER_WORKERS: "${SCANNER_WORKERS:-2}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      ML_MODEL_ENABLED: "true"
+      BACKFILL_ENABLED: "${BACKFILL_ENABLED:-false}"
+      BACKFILL_DATA_PATH: "${BACKFILL_DATA_PATH:-}"
+      BACKFILL_GATEWAY_DB_PATH: "${BACKFILL_GATEWAY_DB_PATH:-}"
+      BACKFILL_RATE: "${BACKFILL_RATE:-5}"
+      BACKFILL_INTERVAL_HOURS: "${BACKFILL_INTERVAL_HOURS:-24}"
+    volumes:
+      - scanner-data:/app/data
+      - /data/contiguous:/gateway-data/contiguous:ro
+      - /programs/ar-io-node/data/sqlite:/gateway-data/sqlite:ro
+    restart: unless-stopped
+    networks:
+      - ar-io-network
+
+volumes:
+  scanner-data:
+
+networks:
+  ar-io-network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-ar-io-network}

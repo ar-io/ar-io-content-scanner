@@ -1,0 +1,9 @@
+[project]
+name = "ar-io-content-scanner"
+version = "0.1.0"
+description = "Content moderation scanner sidecar for ar.io gateways"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
