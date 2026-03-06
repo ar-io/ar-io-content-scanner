@@ -30,50 +30,30 @@ RATE_LIMITER_IPS_AND_CIDRS_ALLOWLIST=172.17.0.0/16
 
 ### Step 2: Deploy Content Scanner
 
-Content Scanner runs as a separate Docker Compose project, joining the ar-io-node's network so both containers can communicate by service name.
+Clone the Content Scanner repo, copy `.env.example` to `.env`, and set your `ADMIN_API_KEY` to match the gateway:
 
-Create a `docker-compose.yml` in the Content Scanner directory:
-
-```yaml
-services:
-  content-scanner:
-    image: ghcr.io/ar-io/gateway-content-scanner:latest
-    environment:
-      GATEWAY_URL: "http://core:4000"
-      ADMIN_API_KEY: "${ADMIN_API_KEY}"
-      SCANNER_MODE: "dry-run"
-      LOG_LEVEL: "info"
-    volumes:
-      - scanner-data:/app/data
-    restart: unless-stopped
-    networks:
-      - ar-io-network
-
-volumes:
-  scanner-data:
-
-networks:
-  ar-io-network:
-    external: true
-    name: ${DOCKER_NETWORK_NAME:-ar-io-network}
+```bash
+git clone https://github.com/ar-io/gateway-content-scanner.git
+cd gateway-content-scanner
+cp .env.example .env
+# Edit .env — set ADMIN_API_KEY to match your gateway's key
 ```
 
-This joins the `ar-io-network` created by your ar-io-node compose. The `core` and `content-scanner` hostnames resolve across both projects.
+The included `docker-compose.yml` joins the ar-io-node's `ar-io-network` automatically, so both containers can communicate by service name (`core` and `content-scanner`).
 
 ### Step 3: Start in Dry-Run Mode
 
 ```bash
-docker compose up -d content-scanner
+docker compose up -d
 ```
 
-In dry-run mode, Content Scanner logs all detections but never blocks content. This lets you verify accuracy before enforcement.
+In dry-run mode (the default), Content Scanner logs all detections but never blocks content. This lets you verify accuracy before enforcement.
 
 ### Step 4: Enable Enforcement
 
-Once you're confident in the detection accuracy (check logs for false positives), switch to enforce mode:
+Once you're confident in the detection accuracy (check logs for false positives), set enforce mode in your `.env`:
 
 ```bash
-# In your .env or docker-compose.yml
 SCANNER_MODE=enforce
 ```
 

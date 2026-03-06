@@ -55,35 +55,19 @@ Requires ar-io-node with the `DATA_CACHED` webhook event support.
 
 ### 2. Run the Scanner
 
-Content Scanner runs as a separate Docker Compose project, joining the ar-io-node network:
+Clone this repo, copy `.env.example` to `.env`, and set your `ADMIN_API_KEY`:
 
-```yaml
-# docker-compose.yml
-services:
-  content-scanner:
-    image: ghcr.io/ar-io/gateway-content-scanner:latest
-    environment:
-      GATEWAY_URL: "http://core:4000"
-      ADMIN_API_KEY: "${ADMIN_API_KEY}"
-      SCANNER_MODE: "dry-run"
-    volumes:
-      - scanner-data:/app/data
-    restart: unless-stopped
-    networks:
-      - ar-io-network
-
-volumes:
-  scanner-data:
-
-networks:
-  ar-io-network:
-    external: true
-    name: ${DOCKER_NETWORK_NAME:-ar-io-network}
+```bash
+cp .env.example .env
+# Edit .env — set ADMIN_API_KEY to match your gateway's key
+docker compose up -d
 ```
+
+The included `docker-compose.yml` joins the ar-io-node's `ar-io-network` automatically.
 
 ### 3. Observe, Then Enforce
 
-Start with `SCANNER_MODE=dry-run` to observe detections in logs without blocking. When satisfied with accuracy, switch to `SCANNER_MODE=enforce`.
+Start with `SCANNER_MODE=dry-run` (the default) to observe detections in logs without blocking. When satisfied with accuracy, set `SCANNER_MODE=enforce` in your `.env` and restart.
 
 ## Detection Engine
 
