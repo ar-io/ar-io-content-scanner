@@ -38,31 +38,47 @@ A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io
 
 ### 1. Gateway Configuration
 
-Add to your gateway's environment:
+Add to your ar-io-node `.env`:
 
 ```bash
 WEBHOOK_TARGET_SERVERS=http://content-scanner:3100/scan
 WEBHOOK_EMIT_DATA_CACHED_EVENTS=true
 ```
 
+If your gateway has `ENABLE_RATE_LIMITER=true`, allowlist the Docker network:
+
+```bash
+RATE_LIMITER_IPS_AND_CIDRS_ALLOWLIST=172.17.0.0/16
+```
+
 Requires ar-io-node with the `DATA_CACHED` webhook event support.
 
 ### 2. Run the Scanner
 
+Content Scanner runs as a separate Docker Compose project, joining the ar-io-node network:
+
 ```yaml
-# Add to your docker-compose.yml
+# docker-compose.yml
 services:
   content-scanner:
-    image: ghcr.io/ar-io/ar-io-content-scanner:latest
+    image: ghcr.io/ar-io/gateway-content-scanner:latest
     environment:
       GATEWAY_URL: "http://core:4000"
       ADMIN_API_KEY: "${ADMIN_API_KEY}"
       SCANNER_MODE: "dry-run"
     volumes:
       - scanner-data:/app/data
-    depends_on:
-      - core
     restart: unless-stopped
+    networks:
+      - ar-io-network
+
+volumes:
+  scanner-data:
+
+networks:
+  ar-io-network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-ar-io-network}
 ```
 
 ### 3. Observe, Then Enforce

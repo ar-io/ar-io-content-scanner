@@ -12,7 +12,7 @@ This guide covers deploying, configuring, and operating Content Scanner alongsid
 
 ### Step 1: Update Gateway Environment
 
-Add these to your gateway's (core service) environment variables:
+Add these to your ar-io-node `.env`:
 
 ```bash
 # Point webhooks at Content Scanner
@@ -28,31 +28,37 @@ If your gateway has `ENABLE_RATE_LIMITER=true`, allowlist the Docker internal ne
 RATE_LIMITER_IPS_AND_CIDRS_ALLOWLIST=172.17.0.0/16
 ```
 
-### Step 2: Add Content Scanner to Docker Compose
+### Step 2: Deploy Content Scanner
 
-Add this service to your `docker-compose.yml`:
+Content Scanner runs as a separate Docker Compose project, joining the ar-io-node's network so both containers can communicate by service name.
 
-```yaml
-content-scanner:
-  image: ghcr.io/ar-io/gateway-content-scanner:latest
-  environment:
-    GATEWAY_URL: "http://core:4000"
-    ADMIN_API_KEY: "${ADMIN_API_KEY}"
-    SCANNER_MODE: "dry-run"
-    LOG_LEVEL: "info"
-  volumes:
-    - scanner-data:/app/data
-  depends_on:
-    - core
-  restart: unless-stopped
-```
-
-Add the volume to your volumes section:
+Create a `docker-compose.yml` in the Content Scanner directory:
 
 ```yaml
+services:
+  content-scanner:
+    image: ghcr.io/ar-io/gateway-content-scanner:latest
+    environment:
+      GATEWAY_URL: "http://core:4000"
+      ADMIN_API_KEY: "${ADMIN_API_KEY}"
+      SCANNER_MODE: "dry-run"
+      LOG_LEVEL: "info"
+    volumes:
+      - scanner-data:/app/data
+    restart: unless-stopped
+    networks:
+      - ar-io-network
+
 volumes:
   scanner-data:
+
+networks:
+  ar-io-network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-ar-io-network}
 ```
+
+This joins the `ar-io-network` created by your ar-io-node compose. The `core` and `content-scanner` hostnames resolve across both projects.
 
 ### Step 3: Start in Dry-Run Mode
 
@@ -182,7 +188,7 @@ All rules are enabled by default. Disable individual rules if needed:
 | Variable | Default | Rule |
 |----------|---------|------|
 | `RULE_SEED_PHRASE` | `true` | Seed phrase harvesting (8+ inputs + seed terms) |
-| `RULE_EXTERNAL_CREDENTIAL_FORM` | `true` | Password forms posting to external URLs |
+| `RULE_EXTERNAL_CREDENTIAL_FORM` | `true` | Password + external form action or JS exfil patterns |
 | `RULE_WALLET_IMPERSONATION` | `true` | Crypto brand spoofing with credential capture |
 | `RULE_OBFUSCATED_LOADER` | `true` | Encoded/obfuscated DOM injection |
 
