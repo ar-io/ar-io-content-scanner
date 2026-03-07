@@ -55,11 +55,13 @@ Requires ar-io-node with the `DATA_CACHED` webhook event support.
 
 ### 2. Run the Scanner
 
-Clone this repo, copy `.env.example` to `.env`, and set your `ADMIN_API_KEY`:
+Clone this repo, copy `.env.example` to `.env`, and configure:
 
 ```bash
 cp .env.example .env
-# Edit .env — set ADMIN_API_KEY to match your gateway's key
+# Edit .env:
+#   ADMIN_API_KEY    — must match your gateway's ADMIN_API_KEY
+#   SCANNER_ADMIN_KEY — choose a secret key for the admin dashboard
 docker compose up -d
 ```
 
@@ -79,7 +81,7 @@ Each rule requires 2+ independent signals (conjunctive logic) to ensure near-zer
 |------|----------|----------|
 | **Seed Phrase Harvesting** | 8+ text inputs | Seed phrase terminology in visible text |
 | **External Credential Form** | Password input | Form action is absolute URL, or JS exfil patterns with external URL |
-| **Wallet Impersonation** | Crypto brand in title/headings/img alt | Password input |
+| **Wallet Impersonation** | Crypto brand in title/headings/img alt | Password input or key-phrase terminology |
 | **Obfuscated Loader** | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
 
 ### ML Model (Advisory)
@@ -143,6 +145,14 @@ Admin actions (confirm/dismiss) create overrides that persist across restarts. D
 | `/scan` | POST | Receives `DATA_CACHED` webhook events (returns 202) |
 | `/health` | GET | Health check (mode, version) |
 | `/metrics` | GET | Scan statistics (verdicts, cache hits, blocks, queue depth) |
+| `/admin` | GET | Admin dashboard (browser UI) |
+| `/api/admin/stats` | GET | Dashboard data (requires `SCANNER_ADMIN_KEY`) |
+| `/api/admin/review` | GET | Review queue with filters |
+| `/api/admin/review/:hash/confirm` | POST | Confirm detection as malicious |
+| `/api/admin/review/:hash/dismiss` | POST | Dismiss as false positive |
+| `/api/admin/history` | GET | Paginated scan history |
+| `/api/admin/history/export` | GET | CSV export of scan history |
+| `/api/admin/settings` | GET | Current scanner configuration |
 
 ## Docker Images
 
@@ -188,5 +198,5 @@ python3 -m pytest tests/ -v
 docker build -t content-scanner .
 
 # Run locally
-GATEWAY_URL=http://localhost:3000 ADMIN_API_KEY=secret python3 -m src.server
+GATEWAY_URL=http://localhost:3000 ADMIN_API_KEY=secret SCANNER_ADMIN_KEY=admin python3 -m src.server
 ```

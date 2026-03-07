@@ -7,6 +7,7 @@ This guide covers deploying, configuring, and operating Content Scanner alongsid
 - ar-io-node with `DATA_CACHED` webhook event support
 - Docker and Docker Compose
 - Your gateway's `ADMIN_API_KEY`
+- A separate `SCANNER_ADMIN_KEY` for admin dashboard access
 
 ## Deployment
 
@@ -30,13 +31,15 @@ RATE_LIMITER_IPS_AND_CIDRS_ALLOWLIST=172.17.0.0/16
 
 ### Step 2: Deploy Content Scanner
 
-Clone the Content Scanner repo, copy `.env.example` to `.env`, and set your `ADMIN_API_KEY` to match the gateway:
+Clone the Content Scanner repo, copy `.env.example` to `.env`, and configure:
 
 ```bash
 git clone https://github.com/ar-io/gateway-content-scanner.git
 cd gateway-content-scanner
 cp .env.example .env
-# Edit .env — set ADMIN_API_KEY to match your gateway's key
+# Edit .env:
+#   ADMIN_API_KEY     — must match your gateway's ADMIN_API_KEY
+#   SCANNER_ADMIN_KEY — choose a secret key for the admin dashboard
 ```
 
 The included `docker-compose.yml` joins the ar-io-node's `ar-io-network` automatically, so both containers can communicate by service name (`core` and `content-scanner`).
@@ -62,6 +65,26 @@ Then restart Content Scanner:
 ```bash
 docker compose restart content-scanner
 ```
+
+## Admin Dashboard
+
+Access the admin dashboard at `http://localhost:3100/admin`. Log in with your `SCANNER_ADMIN_KEY`.
+
+The dashboard provides:
+
+- **Dashboard** — real-time stats, system health, backfill status, recent detections with 30-second auto-refresh
+- **Review Queue** — confirm or dismiss flagged content (MALICIOUS/SUSPICIOUS verdicts)
+- **Scan History** — searchable, filterable log of all scans with CSV export
+- **Settings** — current configuration, rule status, database stats, training data export
+
+### Admin Overrides
+
+When you confirm or dismiss a detection, an **admin override** is created:
+
+- **Confirm**: Marks content as malicious. In enforce mode, the content is immediately blocked. The override persists — if the same content is re-encountered (e.g., during backfill), it is blocked without re-scanning.
+- **Dismiss**: Marks content as clean. The verdict is updated to CLEAN and the content is never re-flagged, even on subsequent backfill sweeps.
+
+Overrides persist in the database across container restarts.
 
 ## Monitoring
 
@@ -146,7 +169,8 @@ Example log entry for a blocked phishing page:
 | Variable | Description |
 |----------|-------------|
 | `GATEWAY_URL` | Internal URL of your ar-io-node (e.g., `http://core:4000`) |
-| `ADMIN_API_KEY` | Must match the gateway's `ADMIN_API_KEY` |
+| `ADMIN_API_KEY` | Must match the gateway's `ADMIN_API_KEY` (machine-to-machine auth for blocking) |
+| `SCANNER_ADMIN_KEY` | Secret key for the admin dashboard (separate from gateway key) |
 
 ### Optional
 
@@ -160,6 +184,7 @@ Example log entry for a blocked phishing page:
 | `MAX_SCAN_BYTES` | `262144` | Max HTML bytes to scan (256KB) |
 | `SCAN_TIMEOUT` | `10000` | Gateway fetch timeout in ms |
 | `DB_PATH` | `/app/data/scanner.db` | SQLite database path |
+| `ADMIN_UI_ENABLED` | `true` | Enable the admin dashboard at `/admin` |
 
 ### Rule Toggles
 
@@ -169,7 +194,7 @@ All rules are enabled by default. Disable individual rules if needed:
 |----------|---------|------|
 | `RULE_SEED_PHRASE` | `true` | Seed phrase harvesting (8+ inputs + seed terms) |
 | `RULE_EXTERNAL_CREDENTIAL_FORM` | `true` | Password + external form action or JS exfil patterns |
-| `RULE_WALLET_IMPERSONATION` | `true` | Crypto brand spoofing with credential capture |
+| `RULE_WALLET_IMPERSONATION` | `true` | Crypto brand spoofing with password input or key-phrase terminology |
 | `RULE_OBFUSCATED_LOADER` | `true` | Encoded/obfuscated DOM injection |
 
 ## Troubleshooting
@@ -205,21 +230,20 @@ SCANNER_WORKERS=4
 
 ### False positive (legitimate content blocked)
 
-1. Note the transaction ID from the block log
-2. Manually unblock via the gateway's admin API:
-   ```bash
-   # Use the gateway's admin interface or API to remove the block
-   ```
-3. Report the false positive so the rules can be improved
+1. Open the admin dashboard at `http://localhost:3100/admin`
+2. Go to the **Review Queue** tab and find the flagged content
+3. Click **Dismiss** to mark it as a false positive — this updates the verdict to CLEAN and creates an override so the content is never re-flagged
+4. If the content was already blocked in enforce mode, you'll also need to unblock it via the gateway's admin API
 
 ## Data and Persistence
 
 Content Scanner stores its SQLite database at `DB_PATH` (default: `/app/data/scanner.db`). This contains:
 
-- **Verdict cache**: Scan results keyed by content hash. Since Arweave content is immutable, these verdicts are permanent.
-- **Scan queue**: Pending webhook events awaiting processing. Items older than 1 hour are automatically purged.
+- **Verdict cache** (`scan_verdicts`): Scan results keyed by content hash. Since Arweave content is immutable, these verdicts are permanent.
+- **Scan queue** (`scan_queue`): Pending webhook events awaiting processing. Items older than 1 hour are automatically purged.
+- **Admin overrides** (`admin_overrides`): Operator confirm/dismiss decisions from the admin dashboard. These persist across restarts and take priority over re-scans.
 
-The volume should be persisted across container restarts. If the database is lost, Content Scanner will rescan content as it encounters it -- there is no data loss, just temporary extra work.
+The volume should be persisted across container restarts. If the database is lost, Content Scanner will rescan content as it encounters it — there is no data loss, just temporary extra work. However, **admin overrides will be lost**, so dismissed false positives may be re-flagged.
 
 ## Backfill: Scanning Existing Cached Content
 
@@ -252,6 +276,8 @@ content-scanner:
 5. In enforce mode, looks up TX IDs via the gateway's `data.db` and blocks malicious content
 
 ### Monitoring Backfill
+
+The admin dashboard's **Dashboard** tab shows backfill status including files scanned, malicious found, sweeps completed, and last sweep time. You can also check via CLI:
 
 ```bash
 # Check backfill progress in metrics
