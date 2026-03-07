@@ -70,7 +70,12 @@ class WalletImpersonationRule(Rule):
         matched_phrases = [
             p for p in KEY_PHRASES if p in visible_text
         ]
-        signal_b = has_password or len(matched_phrases) > 0
+        # Key phrases strengthen the signal but require a password input to
+        # confirm credential capture. Pages that merely discuss crypto
+        # terminology (blogs, dApps) often mention "seed phrase" or "private
+        # key" without actually harvesting credentials. The seed-phrase rule
+        # separately covers 8+ text inputs with seed terminology.
+        signal_b = has_password
 
         return RuleResult(
             rule_name=self.name,

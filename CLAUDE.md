@@ -63,7 +63,7 @@ CLEAN            < 0.95         CLEAN
 |------|----------|----------|
 | `seed-phrase-harvesting` | 8+ text inputs | Seed phrase terminology in visible text |
 | `external-credential-form` | Password input | Form action is absolute URL OR JS exfil patterns ($.ajax, fetch, etc.) with external URL |
-| `wallet-impersonation` | Crypto brand in title/headings/img alt | Password input or key-phrase terminology |
+| `wallet-impersonation` | Crypto brand in title/headings/img alt | Password input |
 | `obfuscated-loader` | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
 
 ### Why This Works on Arweave

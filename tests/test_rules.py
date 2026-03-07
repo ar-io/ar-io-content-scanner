@@ -153,6 +153,19 @@ class TestWalletImpersonationRule:
         result = self.rule.evaluate(html, soup)
         assert result.triggered is False  # no password/key phrases
 
+    def test_brand_with_key_phrases_but_no_password_does_not_trigger(self):
+        """Editorial content discussing wallets should not trigger.
+        Regression test for false positives on blogs/dApps."""
+        html = """<html><head><title>Crypto Guide</title></head>
+        <body><h1>Binance Tutorial</h1>
+        <p>Store your seed phrase in a safe place.</p>
+        <p>Never share your private key with anyone.</p>
+        <input type="text" placeholder="Search articles...">
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False  # key phrases without password input
+
 
 class TestObfuscatedLoaderRule:
     def setup_method(self):
