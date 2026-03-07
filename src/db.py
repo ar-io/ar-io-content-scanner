@@ -306,6 +306,7 @@ class ScannerDB:
 
     def list_review_items(
         self,
+        query: str = "",
         verdict_filter: str = "all",
         status_filter: str = "pending",
         sort: str = "newest",
@@ -314,6 +315,13 @@ class ScannerDB:
     ) -> tuple[list[dict], int]:
         conditions = ["v.verdict IN ('malicious', 'suspicious')"]
         params: list = []
+
+        if query:
+            conditions.append(
+                "(v.tx_id LIKE ? OR v.content_hash LIKE ?)"
+            )
+            like = f"%{query}%"
+            params.extend([like, like])
 
         if verdict_filter in ("malicious", "suspicious"):
             conditions.append("v.verdict = ?")

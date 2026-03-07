@@ -1,5 +1,10 @@
 <!-- Scan History Tab -->
 <div x-data="historyTab" x-init="init()">
+  <div class="section-header">
+    <h2>Scan History</h2>
+    <p>Complete log of all scanned content including clean, suspicious, and malicious verdicts. Use filters to narrow results or export data for external analysis.</p>
+  </div>
+
   <template x-if="error">
     <div class="error-banner">
       <span x-text="error"></span>
@@ -52,58 +57,64 @@
   </div>
 
   <!-- Loading -->
-  <div x-show="loading" style="text-align: center; padding: 40px;">
+  <div x-show="loading" class="text-center" style="padding: 40px;">
     <div class="spinner" style="width: 24px; height: 24px;"></div>
   </div>
 
   <!-- Results table -->
   <div x-show="!loading" class="card" style="padding: 0; overflow-x: auto;">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Scanned At</th>
-          <th>TX ID</th>
-          <th>Verdict</th>
-          <th>Rules</th>
-          <th>ML Score</th>
-          <th>Source</th>
-          <th>Admin</th>
-        </tr>
-      </thead>
-      <tbody>
-        <template x-if="items.length === 0">
-          <tr><td colspan="7" style="text-align: center; color: var(--color-gray); padding: 32px;">No results found</td></tr>
-        </template>
-        <template x-for="item in items" :key="item.content_hash">
+    <template x-if="items.length === 0">
+      <div class="empty-state">
+        <div class="empty-state-icon">&#128269;</div>
+        <p class="empty-state-title">No results found</p>
+        <p class="empty-state-text">Try adjusting your search query or filters to find what you're looking for.</p>
+      </div>
+    </template>
+    <template x-if="items.length > 0">
+      <table class="data-table">
+        <thead>
           <tr>
-            <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
-            <td>
-              <span class="mono" x-text="truncateId(item.tx_id, 16)"></span>
-            </td>
-            <td><span :class="badgeClass(item.verdict)" x-text="item.verdict"></span></td>
-            <td>
-              <template x-for="r in parseRules(item.matched_rules)">
-                <span class="pill" x-text="r"></span>
-              </template>
-            </td>
-            <td>
-              <span x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '—'"></span>
-            </td>
-            <td>
-              <span style="font-size: 0.8rem;" x-text="getSource(item.tx_id)"></span>
-            </td>
-            <td>
-              <template x-if="item.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red); font-size: 0.8rem;">&#10003;</span></template>
-              <template x-if="item.admin_status === 'confirmed_clean'"><span style="color: var(--color-green); font-size: 0.8rem;">&#10005;</span></template>
-            </td>
+            <th>Scanned At</th>
+            <th>TX ID</th>
+            <th>Verdict</th>
+            <th>Rules</th>
+            <th>ML Score</th>
+            <th>Source</th>
+            <th>Admin</th>
           </tr>
-        </template>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          <template x-for="item in items" :key="item.content_hash">
+            <tr>
+              <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
+              <td>
+                <span class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id"></span>
+              </td>
+              <td><span :class="badgeClass(item.verdict)" x-text="item.verdict"></span></td>
+              <td>
+                <template x-for="r in parseRules(item.matched_rules)">
+                  <span class="pill" x-text="r"></span>
+                </template>
+              </td>
+              <td>
+                <span x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '\u2014'"></span>
+              </td>
+              <td>
+                <span style="font-size: 0.8rem;" x-text="getSource(item)"></span>
+              </td>
+              <td>
+                <template x-if="item.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red); font-size: 0.8rem;" title="Confirmed malicious">&#10003;</span></template>
+                <template x-if="item.admin_status === 'confirmed_clean'"><span style="color: var(--color-green); font-size: 0.8rem;" title="Dismissed as false positive">&#10005;</span></template>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </template>
   </div>
 
   <!-- Pagination -->
-  <div class="pagination" x-show="!loading">
+  <div class="pagination" x-show="!loading && pages > 1">
     <button class="btn btn-sm btn-outline" @click="setPage(page - 1)" :disabled="page <= 1">Prev</button>
     <span style="font-size: 0.85rem; color: var(--color-gray);">
       Page <span x-text="page"></span> of <span x-text="pages"></span>

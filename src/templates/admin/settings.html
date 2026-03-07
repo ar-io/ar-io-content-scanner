@@ -1,5 +1,10 @@
 <!-- Settings Tab -->
 <div x-data="settingsTab" x-init="init()">
+  <div class="section-header">
+    <h2>Settings</h2>
+    <p>Current scanner configuration, detection rule status, and database statistics. Configuration changes require editing your .env file and restarting the scanner.</p>
+  </div>
+
   <template x-if="error">
     <div class="error-banner">
       <span x-text="error"></span>
@@ -7,16 +12,16 @@
     </div>
   </template>
 
-  <div x-show="loading" style="text-align: center; padding: 40px;">
+  <div x-show="loading" class="text-center" style="padding: 40px;">
     <div class="spinner" style="width: 24px; height: 24px;"></div>
   </div>
 
   <template x-if="config && !loading">
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <div class="grid-2col">
       <!-- Configuration -->
       <div class="card">
         <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Configuration</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 0.85rem;">
+        <div class="grid-kv">
           <div style="color: var(--color-gray);">Scanner Mode</div>
           <div>
             <span :class="config.mode === 'enforce' ? 'badge badge-clean' : 'badge badge-suspicious'" x-text="config.mode"></span>
@@ -41,34 +46,47 @@
 
       <!-- Rules -->
       <div class="card">
-        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Detection Rules</h3>
-        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem;">
-          <div style="display: flex; align-items: center;">
-            <span class="status-dot" :class="config.rules.seed_phrase ? 'enabled' : 'disabled'"></span>
-            <span>Seed Phrase Harvesting</span>
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Detection Rules</h3>
+        <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0 0 16px;">Each rule requires two independent signals to trigger, minimizing false positives.</p>
+        <div style="display: flex; flex-direction: column; gap: 14px; font-size: 0.85rem;">
+          <div>
+            <div style="display: flex; align-items: center;">
+              <span class="status-dot" :class="config.rules.seed_phrase ? 'enabled' : 'disabled'"></span>
+              <span style="font-weight: 600;">Seed Phrase Harvesting</span>
+            </div>
+            <div class="rule-desc" style="margin-left: 14px;">Detects pages with 8+ text inputs combined with seed phrase terminology. Targets crypto wallet recovery phrase theft.</div>
           </div>
-          <div style="display: flex; align-items: center;">
-            <span class="status-dot" :class="config.rules.external_credential_form ? 'enabled' : 'disabled'"></span>
-            <span>External Credential Form</span>
+          <div>
+            <div style="display: flex; align-items: center;">
+              <span class="status-dot" :class="config.rules.external_credential_form ? 'enabled' : 'disabled'"></span>
+              <span style="font-weight: 600;">External Credential Form</span>
+            </div>
+            <div class="rule-desc" style="margin-left: 14px;">Detects password inputs that submit to external URLs via form actions or JavaScript exfiltration patterns (fetch, XMLHttpRequest, $.ajax).</div>
           </div>
-          <div style="display: flex; align-items: center;">
-            <span class="status-dot" :class="config.rules.wallet_impersonation ? 'enabled' : 'disabled'"></span>
-            <span>Wallet Impersonation</span>
+          <div>
+            <div style="display: flex; align-items: center;">
+              <span class="status-dot" :class="config.rules.wallet_impersonation ? 'enabled' : 'disabled'"></span>
+              <span style="font-weight: 600;">Wallet Impersonation</span>
+            </div>
+            <div class="rule-desc" style="margin-left: 14px;">Detects pages spoofing crypto wallet brands (MetaMask, Trust Wallet, etc.) combined with password inputs or key-phrase terminology.</div>
           </div>
-          <div style="display: flex; align-items: center;">
-            <span class="status-dot" :class="config.rules.obfuscated_loader ? 'enabled' : 'disabled'"></span>
-            <span>Obfuscated Loader</span>
+          <div>
+            <div style="display: flex; align-items: center;">
+              <span class="status-dot" :class="config.rules.obfuscated_loader ? 'enabled' : 'disabled'"></span>
+              <span style="font-weight: 600;">Obfuscated Loader</span>
+            </div>
+            <div class="rule-desc" style="margin-left: 14px;">Detects DOM injection combined with encoding functions (eval, atob, fromCharCode chains) and long obfuscated payloads like base64 strings.</div>
           </div>
         </div>
 
         <template x-if="config.backfill">
-          <div style="margin-top: 20px;">
-            <h4 style="font-size: 0.85rem; font-weight: 700; margin: 0 0 8px;">Backfill</h4>
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-gray-light);">
+            <h4 style="font-size: 0.85rem; font-weight: 700; margin: 0 0 8px;">Backfill Configuration</h4>
             <template x-if="!config.backfill.enabled">
-              <p style="color: var(--color-gray); font-size: 0.85rem;">Not configured</p>
+              <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Set BACKFILL_ENABLED=true in your .env to proactively scan existing cached content.</p>
             </template>
             <template x-if="config.backfill.enabled">
-              <div style="font-size: 0.85rem; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px;">
+              <div class="grid-kv" style="max-width: 300px;">
                 <div style="color: var(--color-gray);">Rate</div>
                 <div x-text="config.backfill.rate + ' files/sec'"></div>
                 <div style="color: var(--color-gray);">Interval</div>
@@ -82,7 +100,7 @@
       <!-- Database Stats -->
       <div class="card">
         <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Database</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 0.85rem;">
+        <div class="grid-kv">
           <div style="color: var(--color-gray);">Total Verdicts</div>
           <div style="font-weight: 600;" x-text="config.db_stats.total_verdicts.toLocaleString()"></div>
           <template x-for="[k, v] in Object.entries(config.db_stats.verdicts_by_type)">
@@ -104,10 +122,9 @@
 
       <!-- Training Data Export -->
       <div class="card">
-        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Training Data</h3>
-        <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 12px;">
-          Export operator-labeled verdicts for ML model retraining.
-          Confirmed and dismissed items provide ground-truth labels.
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Training Data</h3>
+        <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 12px; line-height: 1.5;">
+          Export operator-verified verdicts as labeled training data for ML model improvement. Each confirmed or dismissed item provides a ground-truth label.
         </p>
         <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; font-size: 0.85rem;">
           <span style="color: var(--color-red);">
@@ -120,6 +137,9 @@
         <button class="btn btn-primary btn-sm" @click="exportTraining()" :disabled="config.db_stats.total_overrides === 0">
           Export Training Data (CSV)
         </button>
+        <template x-if="config.db_stats.total_overrides === 0">
+          <p style="font-size: 0.8rem; color: var(--color-gray); margin: 8px 0 0;">No overrides yet. Review flagged content in the Review Queue to start building training data.</p>
+        </template>
       </div>
     </div>
   </template>

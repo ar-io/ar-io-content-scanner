@@ -1,5 +1,10 @@
 <!-- Review Queue Tab -->
-<div x-data="reviewTab" x-init="init()">
+<div x-data="reviewTab" x-init="init()" @close-modal.window="closeModal(); confirmDialog.show = false;">
+  <div class="section-header">
+    <h2>Review Queue</h2>
+    <p>Content flagged as malicious or suspicious by the detection engine. <strong>Confirm</strong> to mark as a true positive (blocks content in enforce mode). <strong>Dismiss</strong> to mark as a false positive (content will never be re-flagged). All decisions are used as ground truth for ML model retraining.</p>
+  </div>
+
   <template x-if="error">
     <div class="error-banner">
       <span x-text="error"></span>
@@ -9,7 +14,13 @@
 
   <!-- Filters -->
   <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
-    <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+    <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+      <!-- Search -->
+      <div style="position: relative; flex: 1; min-width: 200px; max-width: 360px;">
+        <input type="text" x-model="searchQuery" @input="onSearch()" placeholder="Search by TX ID or content hash..."
+          style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box;">
+      </div>
+
       <div style="display: flex; gap: 6px; align-items: center;">
         <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Verdict:</span>
         <button class="filter-btn" :class="{ active: verdictFilter === 'all' }" @click="setFilter('verdictFilter', 'all')">All</button>
@@ -25,7 +36,7 @@
       </div>
       <div style="display: flex; gap: 6px; align-items: center;">
         <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Sort:</span>
-        <select @change="setFilter('sort', $event.target.value)" style="font-size: 0.8rem; padding: 4px 8px; border: 1px solid var(--color-gray-light); border-radius: 6px;">
+        <select @change="setFilter('sort', $event.target.value)" style="font-size: 0.8rem; padding: 4px 8px; border: 1px solid var(--color-gray-light); border-radius: 6px; font-family: inherit;">
           <option value="newest" :selected="sort === 'newest'">Newest First</option>
           <option value="oldest" :selected="sort === 'oldest'">Oldest First</option>
           <option value="ml_score_desc" :selected="sort === 'ml_score_desc'">Highest ML Score</option>
@@ -38,15 +49,16 @@
   </div>
 
   <!-- Loading -->
-  <div x-show="loading" style="text-align: center; padding: 40px;">
+  <div x-show="loading" class="text-center" style="padding: 40px;">
     <div class="spinner" style="width: 24px; height: 24px;"></div>
   </div>
 
   <!-- Empty state -->
   <template x-if="!loading && items.length === 0">
-    <div class="card" style="text-align: center; padding: 48px; color: var(--color-gray);">
-      <div style="font-size: 2rem; margin-bottom: 8px;">&#10003;</div>
-      <p style="font-size: 0.9rem;">No items pending review</p>
+    <div class="card empty-state">
+      <div class="empty-state-icon">&#10003;</div>
+      <p class="empty-state-title" x-text="statusFilter === 'pending' ? 'No items pending review' : 'No items match your filters'"></p>
+      <p class="empty-state-text" x-text="statusFilter === 'pending' ? 'All flagged content has been reviewed. New detections will appear here automatically.' : 'Try adjusting your filters to see more items.'"></p>
     </div>
   </template>
 
@@ -60,53 +72,50 @@
         </div>
 
         <div style="margin-bottom: 8px;">
-          <span style="font-size: 0.8rem; color: var(--color-gray);">TX: </span>
+          <span style="font-size: 0.8rem; color: var(--color-gray);">TX ID: </span>
           <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
-          <a :href="'{{ gateway_url }}/raw/' + item.tx_id" target="_blank" style="font-size: 0.75rem; color: var(--color-primary); margin-left: 8px;">View TX &rarr;</a>
         </div>
         <div style="margin-bottom: 12px;">
-          <span style="font-size: 0.75rem; color: var(--color-gray);">Hash: </span>
+          <span style="font-size: 0.75rem; color: var(--color-gray);">Content Hash: </span>
           <span class="mono" style="font-size: 0.75rem; color: var(--color-gray);" x-text="item.content_hash"></span>
         </div>
 
-        <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
           <div>
             <span style="font-size: 0.8rem; color: var(--color-gray);">Rules: </span>
             <template x-for="r in parseRules(item.matched_rules)">
               <span class="pill" x-text="r"></span>
             </template>
-            <span x-show="parseRules(item.matched_rules).length === 0" style="font-size: 0.8rem; color: var(--color-gray);">ML only</span>
+            <span x-show="parseRules(item.matched_rules).length === 0" style="font-size: 0.8rem; color: var(--color-gray);">ML detection only</span>
           </div>
           <div>
-            <span style="font-size: 0.8rem; color: var(--color-gray);">ML: </span>
-            <span style="font-size: 0.85rem; font-weight: 600;" x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '—'"></span>
+            <span style="font-size: 0.8rem; color: var(--color-gray);">ML Score: </span>
+            <span style="font-size: 0.85rem; font-weight: 600;" x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '\u2014'"></span>
             <template x-if="item.ml_score !== null">
               <span class="score-bar">
-                <span class="score-bar-fill" :style="`width: ${Math.min(item.ml_score * 100, 100)}%; background: ${scoreColor(item.ml_score)}`"></span>
+                <span class="score-bar-fill" :style="'width: ' + Math.min(item.ml_score * 100, 100) + '%; background: ' + scoreColor(item.ml_score)"></span>
               </span>
             </template>
           </div>
         </div>
 
         <!-- Actions -->
-        <div style="display: flex; gap: 10px; align-items: center;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <template x-if="!item.admin_override">
-            <button class="btn btn-primary btn-sm" @click="confirmItem(item.content_hash)" :disabled="actionLoading[item.content_hash]">
-              <span x-show="actionLoading[item.content_hash] !== 'confirm'">Confirm Malicious</span>
-              <span x-show="actionLoading[item.content_hash] === 'confirm'" class="spinner"></span>
+            <button class="btn btn-danger btn-sm" @click="promptConfirm(item.content_hash)">
+              Confirm Malicious
             </button>
           </template>
           <template x-if="!item.admin_override">
-            <button class="btn btn-outline btn-sm" @click="dismissItem(item.content_hash)" :disabled="actionLoading[item.content_hash]">
-              <span x-show="actionLoading[item.content_hash] !== 'dismiss'">Dismiss (False Positive)</span>
-              <span x-show="actionLoading[item.content_hash] === 'dismiss'" class="spinner"></span>
+            <button class="btn btn-outline btn-sm" @click="promptDismiss(item.content_hash)">
+              Dismiss (False Positive)
             </button>
           </template>
           <template x-if="item.admin_override === 'confirmed_malicious'">
-            <span style="font-size: 0.8rem; color: var(--color-red); font-weight: 600;">&#10003; Confirmed</span>
+            <span style="font-size: 0.8rem; color: var(--color-red); font-weight: 600;">&#10003; Confirmed as malicious</span>
           </template>
           <template x-if="item.admin_override === 'confirmed_clean'">
-            <span style="font-size: 0.8rem; color: var(--color-green); font-weight: 600;">&#10005; Dismissed</span>
+            <span style="font-size: 0.8rem; color: var(--color-green); font-weight: 600;">&#10005; Dismissed as false positive</span>
           </template>
           <button class="btn btn-sm" style="margin-left: auto; background: var(--color-card); color: var(--color-black);" @click="openDetail(item.content_hash)">
             View Details
@@ -123,51 +132,93 @@
     <button class="btn btn-sm btn-outline" @click="setPage(page + 1)" :disabled="page >= pages">Next</button>
   </div>
 
+  <!-- Confirmation Dialog -->
+  <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="confirmDialog.show = false" x-transition>
+    <div class="confirm-dialog">
+      <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">
+        <span x-show="confirmDialog.action === 'confirm'">Confirm as Malicious</span>
+        <span x-show="confirmDialog.action === 'dismiss'">Dismiss as False Positive</span>
+      </h3>
+      <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 16px; line-height: 1.5;">
+        <span x-show="confirmDialog.action === 'confirm'">This will permanently mark this content as malicious. In enforce mode, the content will be blocked immediately. This decision is used as ground truth for ML model retraining.</span>
+        <span x-show="confirmDialog.action === 'dismiss'">This will mark this content as clean. The scanner will never re-flag this content, even during future backfill sweeps. This decision is used as ground truth for ML model retraining.</span>
+      </p>
+      <div style="margin-bottom: 12px; font-size: 0.8rem;">
+        <span style="color: var(--color-gray);">Content: </span>
+        <span class="mono" x-text="truncateId(confirmDialog.hash, 24)"></span>
+      </div>
+      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 4px;">Notes (optional)</label>
+      <textarea x-model="confirmDialog.notes" placeholder="Add context for this decision (e.g., why it's a false positive, what brand was impersonated)..." rows="3"></textarea>
+      <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
+        <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false">Cancel</button>
+        <template x-if="confirmDialog.action === 'confirm'">
+          <button class="btn btn-danger btn-sm" @click="executeAction()" :disabled="confirmDialog.loading">
+            <span x-show="!confirmDialog.loading">Confirm Malicious</span>
+            <span x-show="confirmDialog.loading" class="spinner"></span>
+          </button>
+        </template>
+        <template x-if="confirmDialog.action === 'dismiss'">
+          <button class="btn btn-primary btn-sm" @click="executeAction()" :disabled="confirmDialog.loading">
+            <span x-show="!confirmDialog.loading">Dismiss</span>
+            <span x-show="confirmDialog.loading" class="spinner"></span>
+          </button>
+        </template>
+      </div>
+    </div>
+  </div>
+
   <!-- Detail Modal -->
-  <div x-show="showModal" class="modal-backdrop" @click.self="closeModal()" style="display: none;" x-transition>
+  <div x-show="showModal" class="modal-backdrop" @click.self="closeModal()" x-transition>
     <div class="modal-content">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h3 class="font-display" style="font-size: 1.1rem; margin: 0;">Scan Details</h3>
-        <button @click="closeModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-gray);">&times;</button>
+        <button @click="closeModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-gray);" aria-label="Close">&times;</button>
       </div>
 
-      <div x-show="detailLoading" style="text-align: center; padding: 40px;">
+      <div x-show="detailLoading" class="text-center" style="padding: 40px;">
         <div class="spinner" style="width: 24px; height: 24px;"></div>
       </div>
 
       <template x-if="detail && !detailLoading">
         <div>
-          <div style="display: grid; grid-template-columns: 120px 1fr; gap: 8px; font-size: 0.85rem; margin-bottom: 20px;">
+          <div class="grid-kv-wide" style="margin-bottom: 20px;">
             <div style="color: var(--color-gray); font-weight: 600;">Verdict</div>
             <div><span :class="badgeClass(detail.verdict)" x-text="detail.verdict"></span></div>
             <div style="color: var(--color-gray); font-weight: 600;">TX ID</div>
             <div class="mono" style="word-break: break-all;" x-text="detail.tx_id"></div>
             <div style="color: var(--color-gray); font-weight: 600;">Content Hash</div>
             <div class="mono" style="word-break: break-all;" x-text="detail.content_hash"></div>
-            <div style="color: var(--color-gray); font-weight: 600;">Rules</div>
-            <div x-text="detail.matched_rules || '—'"></div>
+            <div style="color: var(--color-gray); font-weight: 600;">Matched Rules</div>
+            <div>
+              <template x-for="r in parseRules(detail.matched_rules)">
+                <span class="pill" x-text="r"></span>
+              </template>
+              <span x-show="parseRules(detail.matched_rules).length === 0" style="color: var(--color-gray);">None (ML detection only)</span>
+            </div>
             <div style="color: var(--color-gray); font-weight: 600;">ML Score</div>
-            <div x-text="detail.ml_score !== null ? detail.ml_score.toFixed(6) : '—'"></div>
+            <div x-text="detail.ml_score !== null ? detail.ml_score.toFixed(6) : 'Not available'"></div>
             <div style="color: var(--color-gray); font-weight: 600;">Scanned At</div>
             <div x-text="formatTimestamp(detail.scanned_at)"></div>
-            <div style="color: var(--color-gray); font-weight: 600;">Scanner</div>
+            <div style="color: var(--color-gray); font-weight: 600;">Scanner Version</div>
             <div x-text="detail.scanner_version"></div>
             <div style="color: var(--color-gray); font-weight: 600;">Admin Status</div>
-            <div x-text="detail.admin_override || 'Pending review'"></div>
+            <div>
+              <span x-show="detail.admin_override === 'confirmed_malicious'" style="color: var(--color-red); font-weight: 600;">Confirmed malicious</span>
+              <span x-show="detail.admin_override === 'confirmed_clean'" style="color: var(--color-green); font-weight: 600;">Dismissed (false positive)</span>
+              <span x-show="!detail.admin_override" style="color: var(--color-amber); font-weight: 600;">Pending review</span>
+            </div>
           </div>
 
           <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0 0 8px;">HTML Source Preview</h4>
-          <div class="source-preview" x-text="detailSource || 'Loading...'"></div>
+          <div class="source-preview" x-text="detailSource || 'Loading preview...'"></div>
 
           <!-- Actions in modal -->
-          <div style="display: flex; gap: 10px; margin-top: 20px;">
-            <template x-if="!detail.admin_override">
-              <button class="btn btn-primary" @click="confirmItem(detail.content_hash); closeModal();">Confirm Malicious</button>
-            </template>
-            <template x-if="!detail.admin_override">
-              <button class="btn btn-outline" @click="dismissItem(detail.content_hash); closeModal();">Dismiss (False Positive)</button>
-            </template>
-          </div>
+          <template x-if="!detail.admin_override">
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+              <button class="btn btn-danger" @click="closeModal(); promptConfirm(detail.content_hash);">Confirm Malicious</button>
+              <button class="btn btn-outline" @click="closeModal(); promptDismiss(detail.content_hash);">Dismiss (False Positive)</button>
+            </div>
+          </template>
         </div>
       </template>
     </div>

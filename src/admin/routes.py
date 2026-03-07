@@ -38,7 +38,7 @@ def build_admin_router(app_state) -> APIRouter:
     async def admin_page(request: Request):
         return templates.TemplateResponse(
             "admin/base.html",
-            {"request": request, "gateway_url": settings.gateway_url},
+            {"request": request},
         )
 
     # --- API endpoints (all require auth) ---
@@ -76,6 +76,7 @@ def build_admin_router(app_state) -> APIRouter:
 
     @router.get("/api/admin/review")
     async def review_list(
+        q: str = Query(""),
         verdict: str = Query("all"),
         status: str = Query("pending"),
         sort: str = Query("newest"),
@@ -85,6 +86,7 @@ def build_admin_router(app_state) -> APIRouter:
     ):
         db = _state.db
         items, total = db.list_review_items(
+            query=q,
             verdict_filter=verdict,
             status_filter=status,
             sort=sort,
