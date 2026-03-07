@@ -94,16 +94,15 @@ class BackfillScanner:
             )
             return None
 
-    def _iter_files(self) -> list:
-        """Walk contiguous data directory. Returns list of (filepath, hash_str)."""
+    def _iter_files(self):
+        """Walk contiguous data directory. Yields (filepath, hash_str) tuples."""
         data_dir = os.path.join(self.settings.backfill_data_path, "data")
         if not os.path.isdir(data_dir):
             logger.warning(
                 "backfill_data_dir_not_found", extra={"path": data_dir}
             )
-            return []
+            return
 
-        results = []
         real_data_dir = os.path.realpath(data_dir)
         for bucket1 in sorted(os.listdir(data_dir)):
             bucket1_path = os.path.join(data_dir, bucket1)
@@ -125,8 +124,7 @@ class BackfillScanner:
                     ):
                         continue
                     if os.path.isfile(filepath):
-                        results.append((filepath, filename))
-        return results
+                        yield (filepath, filename)
 
     def _read_head(self, filepath: str) -> bytes | None:
         try:
@@ -191,7 +189,7 @@ class BackfillScanner:
         loop = asyncio.get_running_loop()
 
         try:
-            files = await loop.run_in_executor(None, self._iter_files)
+            files = await loop.run_in_executor(None, lambda: list(self._iter_files()))
             stats["total_files"] = len(files)
 
             processed = 0
@@ -314,6 +312,7 @@ class BackfillScanner:
             stats["malicious"] += 1
 
             # Block all TX IDs in enforce mode
+            file_blocked = 0
             if self.settings.scanner_mode == "enforce" and tx_ids:
                 for tid in tx_ids:
                     success = await self.gateway.block_data(
@@ -321,13 +320,14 @@ class BackfillScanner:
                     )
                     self.metrics.record_block(success)
                     if success:
+                        file_blocked += 1
                         stats["blocked"] += 1
 
             action = "dry_run"
             if self.settings.scanner_mode == "enforce":
                 if not tx_ids:
                     action = "no_tx_ids"
-                elif stats["blocked"] > 0:
+                elif file_blocked > 0:
                     action = "blocked"
                 else:
                     action = "block_failed"

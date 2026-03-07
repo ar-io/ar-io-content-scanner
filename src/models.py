@@ -4,7 +4,7 @@ import re
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 
 # Arweave IDs: 43-character base64url strings
 _BASE64URL_43 = re.compile(r"^[A-Za-z0-9_-]{43}$")
@@ -17,13 +17,15 @@ class WebhookData(BaseModel):
     contentType: str | None = None
     cachedAt: int | None = None
 
-    @validator("id")
+    @field_validator("id")
+    @classmethod
     def id_must_be_valid(cls, v: str) -> str:
         if not _BASE64URL_43.match(v):
             raise ValueError("id must be a 43-character base64url string")
         return v
 
-    @validator("dataSize")
+    @field_validator("dataSize")
+    @classmethod
     def data_size_non_negative(cls, v: int | None) -> int | None:
         if v is not None and v < 0:
             raise ValueError("dataSize must be non-negative")

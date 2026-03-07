@@ -134,11 +134,7 @@ class Scanner:
         # Fetch content from gateway
         content = await self.gateway.fetch_content(tx_id)
         if content is None:
-            logger.warning(
-                "fetch_failed",
-                extra={"tx_id": tx_id},
-            )
-            return
+            raise RuntimeError(f"Failed to fetch content for {tx_id}")
 
         # Content sniff if content type was unknown
         if item.content_type is None or is_html_content_type(item.content_type) is None:
@@ -203,6 +199,8 @@ class Scanner:
                 )
                 self.metrics.record_block(success)
                 action = "blocked" if success else "block_failed"
+            elif self.settings.scanner_mode == "enforce" and not content_hash:
+                action = "no_hash"
             else:
                 action = "dry_run"
 

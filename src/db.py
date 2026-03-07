@@ -133,14 +133,14 @@ class ScannerDB:
         data_size: int | None,
     ) -> bool:
         try:
-            self.conn.execute(
+            cursor = self.conn.execute(
                 "INSERT OR IGNORE INTO scan_queue "
                 "(tx_id, content_hash, content_type, data_size, received_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (tx_id, content_hash, content_type, data_size, int(time.time())),
             )
             self.conn.commit()
-            return self.conn.total_changes > 0
+            return cursor.rowcount > 0
         except sqlite3.Error:
             logger.exception("Failed to enqueue", extra={"tx_id": tx_id})
             return False

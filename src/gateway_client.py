@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -59,45 +60,52 @@ class GatewayClient:
         content_hash: str,
         matched_rules: list[str],
     ) -> bool:
-        try:
-            resp = await self._client.put(
-                "/ar-io/admin/block-data",
-                json={
-                    "id": tx_id,
-                    "hash": content_hash,
-                    "source": "content-scanner",
-                    "notes": f"Auto-blocked: {', '.join(matched_rules)}",
-                },
-                headers={
-                    "Authorization": f"Bearer {self.admin_api_key}",
-                },
-            )
-            success = 200 <= resp.status_code < 300
-            if success:
-                logger.info(
-                    "block_sent",
-                    extra={
-                        "tx_id": tx_id,
-                        "content_hash": content_hash,
-                        "gateway_response": resp.status_code,
+        for attempt in range(2):
+            try:
+                resp = await self._client.put(
+                    "/ar-io/admin/block-data",
+                    json={
+                        "id": tx_id,
+                        "hash": content_hash,
+                        "source": "content-scanner",
+                        "notes": f"Auto-blocked: {', '.join(matched_rules)}",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self.admin_api_key}",
                     },
                 )
-            else:
+                success = 200 <= resp.status_code < 300
+                if success:
+                    logger.info(
+                        "block_sent",
+                        extra={
+                            "tx_id": tx_id,
+                            "content_hash": content_hash,
+                            "gateway_response": resp.status_code,
+                        },
+                    )
+                    return True
                 logger.error(
                     "block_failed",
                     extra={
                         "tx_id": tx_id,
                         "status_code": resp.status_code,
                         "body": resp.text,
+                        "attempt": attempt + 1,
                     },
                 )
-            return success
-        except httpx.HTTPError as e:
-            logger.error(
-                "block_error",
-                extra={"tx_id": tx_id, "error": str(e)},
-            )
-            return False
+            except httpx.HTTPError as e:
+                logger.error(
+                    "block_error",
+                    extra={
+                        "tx_id": tx_id,
+                        "error": str(e),
+                        "attempt": attempt + 1,
+                    },
+                )
+            if attempt == 0:
+                await asyncio.sleep(2)
+        return False
 
     async def health_check(self) -> bool:
         try:

@@ -164,13 +164,14 @@ class TestQueueProcessing:
         scanner.gateway.block_data.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_fetch_failure_skips(self, scanner):
+    async def test_fetch_failure_raises(self, scanner):
         scanner.gateway.fetch_content = AsyncMock(return_value=None)
         item = QueueRow(
             id=1, tx_id="tx1", content_hash="h1",
             content_type="text/html", data_size=100, received_at=0,
         )
-        await scanner.process_queue_item(item)
+        with pytest.raises(RuntimeError, match="Failed to fetch content"):
+            await scanner.process_queue_item(item)
         scanner.gateway.block_data.assert_not_called()
 
     @pytest.mark.asyncio

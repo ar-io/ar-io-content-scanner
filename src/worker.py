@@ -77,7 +77,7 @@ class WorkerPool:
             try:
                 items = self.db.dequeue(batch_size=1)
                 if not items:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.1)
                     continue
 
                 item = items[0]
