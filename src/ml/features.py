@@ -97,7 +97,7 @@ def extract_features(
 
     has_obfuscated_script = False
     for script in all_script_tags:
-        script_content = script.string
+        script_content = script.get_text()
         if script_content:
             if (
                 "document.write" in script_content

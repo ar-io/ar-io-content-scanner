@@ -31,7 +31,10 @@ HTML_SIGNATURES = [
 
 
 def looks_like_html(content: bytes) -> bool:
-    head = content[:512].lstrip().lower()
+    head = content[:512].lstrip()
+    if head.startswith(b"\xef\xbb\xbf"):
+        head = head[3:]
+    head = head.lower()
     return any(head.startswith(sig) for sig in HTML_SIGNATURES)
 
 
@@ -40,8 +43,12 @@ def is_html_content_type(content_type: str | None) -> bool | None:
     if content_type is None:
         return None
     ct = content_type.lower().split(";")[0].strip()
+    if not ct:
+        return None
     if ct in ("text/html", "application/xhtml+xml"):
         return True
+    if ct in ("application/octet-stream", "text/plain"):
+        return None
     return False
 
 

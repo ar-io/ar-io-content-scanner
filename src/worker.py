@@ -136,6 +136,12 @@ class WorkerPool:
                         "Purged old queue items",
                         extra={"count": purged},
                     )
+                retried = self.db.reset_failed(max_age_seconds=600)
+                if retried > 0:
+                    logger.info(
+                        "Reset failed items for retry",
+                        extra={"count": retried},
+                    )
             except asyncio.CancelledError:
                 break
             except Exception:

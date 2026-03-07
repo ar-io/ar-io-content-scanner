@@ -25,6 +25,13 @@ class WebhookData(BaseModel):
             raise ValueError("id must be a 43-character base64url string")
         return v
 
+    @field_validator("hash")
+    @classmethod
+    def hash_must_be_bounded(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 64:
+            raise ValueError("hash must be at most 64 characters")
+        return v
+
     @field_validator("dataSize")
     @classmethod
     def data_size_non_negative(cls, v: int | None) -> int | None:

@@ -107,12 +107,5 @@ class GatewayClient:
                 await asyncio.sleep(2)
         return False
 
-    async def health_check(self) -> bool:
-        try:
-            resp = await self._client.get("/ar-io/info")
-            return resp.status_code == 200
-        except httpx.HTTPError:
-            return False
-
     async def close(self) -> None:
         await self._client.aclose()

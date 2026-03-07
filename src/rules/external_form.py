@@ -71,7 +71,7 @@ class ExternalFormRule(Rule):
 
         if not external_actions:
             all_script_text = " ".join(
-                s.string or "" for s in soup.find_all("script")
+                s.get_text() for s in soup.find_all("script")
             )
             if all_script_text.strip():
                 # Check strong exfil patterns ($.ajax, $.post, XHR)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -12,7 +14,9 @@ def require_admin_key(expected_key: str):
     async def verify(
         creds: HTTPAuthorizationCredentials | None = Depends(_security),
     ) -> str:
-        if creds is None or creds.credentials != expected_key:
+        if creds is None or not hmac.compare_digest(
+            creds.credentials, expected_key
+        ):
             raise HTTPException(status_code=401)
         return creds.credentials
 

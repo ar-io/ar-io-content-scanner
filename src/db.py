@@ -160,20 +160,24 @@ class ScannerDB:
             return False
 
     def dequeue(self, batch_size: int = 1) -> list[QueueRow]:
+        # Atomic: UPDATE with subquery selects and marks rows in one
+        # statement, preventing TOCTOU races across connections.
+        cursor = self.conn.execute(
+            "UPDATE scan_queue SET status = 'processing' "
+            "WHERE id IN ("
+            "  SELECT id FROM scan_queue WHERE status = 'pending' "
+            "  ORDER BY received_at LIMIT ?"
+            ")",
+            (batch_size,),
+        )
+        if cursor.rowcount == 0:
+            return []
         rows = self.conn.execute(
             "SELECT id, tx_id, content_hash, content_type, data_size, received_at "
-            "FROM scan_queue WHERE status = 'pending' "
+            "FROM scan_queue WHERE status = 'processing' "
             "ORDER BY received_at LIMIT ?",
             (batch_size,),
         ).fetchall()
-        if not rows:
-            return []
-        ids = [r[0] for r in rows]
-        placeholders = ",".join("?" * len(ids))
-        self.conn.execute(
-            f"UPDATE scan_queue SET status = 'processing' WHERE id IN ({placeholders})",
-            ids,
-        )
         self.conn.commit()
         return [
             QueueRow(
@@ -202,6 +206,21 @@ class ScannerDB:
     def reset_processing(self) -> int:
         cursor = self.conn.execute(
             "UPDATE scan_queue SET status = 'pending' WHERE status = 'processing'"
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
+    def reset_failed(self, max_age_seconds: int = 600) -> int:
+        """Reset failed items to pending for retry.
+
+        Only resets items received within max_age_seconds to limit retries.
+        Older failed items are left for purge_old to clean up.
+        """
+        cutoff = int(time.time()) - max_age_seconds
+        cursor = self.conn.execute(
+            "UPDATE scan_queue SET status = 'pending' "
+            "WHERE status = 'failed' AND received_at > ?",
+            (cutoff,),
         )
         self.conn.commit()
         return cursor.rowcount

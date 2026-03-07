@@ -54,7 +54,7 @@ class ObfuscatedLoaderRule(Rule):
         encoding_found: list[str] = []
 
         for script in scripts:
-            text = script.string or ""
+            text = script.get_text()
             matched_injection = [
                 p for p in DOM_INJECTION_PATTERNS if re.search(p, text)
             ]
@@ -68,7 +68,7 @@ class ObfuscatedLoaderRule(Rule):
                 break
 
         # Signal B: heavy encoding indicators
-        all_scripts_text = " ".join(s.string or "" for s in scripts)
+        all_scripts_text = " ".join(s.get_text() for s in scripts)
         has_long_base64 = bool(re.search(BASE64_PATTERN, all_scripts_text))
         has_hex_escapes = bool(re.search(HEX_ESCAPE_PATTERN, all_scripts_text))
         has_charcode_chain = bool(

@@ -258,7 +258,26 @@ class BackfillScanner:
                 )
                 stats["clean"] += 1
                 return
-            # confirmed_malicious handled after scan lookup below
+            elif override.admin_verdict == "confirmed_malicious":
+                tx_ids = self._lookup_tx_ids(gateway_db, hash_str)
+                tx_id = tx_ids[0] if tx_ids else "backfill"
+                self.db.save_verdict(
+                    content_hash=hash_str,
+                    tx_id=tx_id,
+                    verdict=Verdict.MALICIOUS,
+                    matched_rules=override.original_rules or "[]",
+                    ml_score=None,
+                    scanner_version=self.settings.scanner_version,
+                )
+                if self.settings.scanner_mode == "enforce" and tx_ids:
+                    rules = json.loads(override.original_rules or "[]")
+                    for tid in tx_ids:
+                        success = await self.gateway.block_data(
+                            tid, hash_str, rules
+                        )
+                        self.metrics.record_block(success)
+                stats["malicious"] += 1
+                return
 
         # 2. Content-sniff for HTML
         head = await loop.run_in_executor(None, self._read_head, filepath)
