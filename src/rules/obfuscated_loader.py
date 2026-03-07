@@ -33,7 +33,11 @@ ENCODING_FUNCTIONS = [
 
 BASE64_PATTERN = r"[A-Za-z0-9+/=]{100,8192}"
 HEX_ESCAPE_PATTERN = r"(?:\\x[0-9a-fA-F]{2}){10,1000}"
-CHAR_CODE_CHAIN = r"String\.fromCharCode\([^)]{20,4096}\)"
+# Match fromCharCode with 4+ numeric literals — real obfuscation encodes
+# strings as comma-separated integers: fromCharCode(104,116,116,112)
+# This excludes library code like jQuery which uses variable expressions:
+# fromCharCode(n >> 10 | 55296, 1023 & n | 56320)
+CHAR_CODE_CHAIN = r"String\.fromCharCode\(\s*\d+\s*(?:,\s*\d+\s*){3,}\)"
 
 
 class ObfuscatedLoaderRule(Rule):

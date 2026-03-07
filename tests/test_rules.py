@@ -189,3 +189,21 @@ class TestObfuscatedLoaderRule:
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
         assert result.triggered is False
+
+    def test_minified_jquery_does_not_trigger(self):
+        """Minified jQuery uses innerHTML and String.fromCharCode internally
+        for DOM manipulation and Unicode handling. This must not trigger.
+        Regression test for AOX app false positive."""
+        html = """<html><body>
+        <script>
+        !function(e,t){"use strict";function m(e,t,n){
+        var r,i,o=(n=n||C).createElement("script");
+        o.text=e;n.head.appendChild(o).parentNode.removeChild(o)}
+        r.appendChild(e).innerHTML="<a id='test'>";
+        return t||(n<0?String.fromCharCode(n+65536):
+        String.fromCharCode(n>>10|55296,1023&n|56320));
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
