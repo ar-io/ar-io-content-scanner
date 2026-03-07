@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ar.io Content Scanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Besley:wght@800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/static/admin/styles.css">
+</head>
+<body>
+
+  <!-- Login Screen -->
+  <div x-data="{ key: '', logging: false }" x-show="!$store.auth.authenticated" class="login-container">
+    <div class="login-card">
+      <h1 class="font-display text-2xl text-center" style="color: var(--color-black);">ar.io Content Scanner</h1>
+      <p style="color: var(--color-gray); text-align: center; margin: 12px 0 24px;">Admin Dashboard</p>
+
+      <template x-if="$store.auth.error">
+        <p style="color: var(--color-red); font-size: 0.85rem; text-align: center; margin-bottom: 12px;" x-text="$store.auth.error"></p>
+      </template>
+
+      <form @submit.prevent="logging = true; await $store.auth.login(key); logging = false;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray);">Admin Key</label>
+        <input type="password" x-model="key" placeholder="Enter your SCANNER_ADMIN_KEY" required autofocus>
+        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 16px; justify-content: center;" :disabled="logging || !key">
+          <span x-show="!logging">Sign In</span>
+          <span x-show="logging" class="spinner"></span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Application -->
+  <div x-show="$store.auth.authenticated" x-cloak>
+    <!-- Header -->
+    <div class="header">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="font-display" style="font-size: 1.1rem;">ar.io</span>
+        <span style="opacity: 0.5;">|</span>
+        <span style="font-weight: 500; font-size: 0.9rem;">Content Scanner Admin</span>
+      </div>
+      <button @click="$store.auth.logout()" class="btn btn-sm" style="background: rgba(255,255,255,0.1); color: white;">
+        Logout
+      </button>
+    </div>
+
+    <!-- Tabs -->
+    <div x-data="{ activeTab: 'dashboard' }" style="padding: 0 32px;">
+      <div style="display: flex; gap: 0; border-bottom: 1px solid var(--color-gray-light); background: var(--color-white); margin: 0 -32px; padding: 0 32px;">
+        <button class="tab-btn" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">Dashboard</button>
+        <button class="tab-btn" :class="{ active: activeTab === 'review' }" @click="activeTab = 'review'">Review Queue</button>
+        <button class="tab-btn" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">Scan History</button>
+        <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">Settings</button>
+      </div>
+
+      <div style="padding: 24px 0;">
+        <!-- Dashboard Tab -->
+        <div x-show="activeTab === 'dashboard'">
+          {% include "admin/dashboard.html" %}
+        </div>
+
+        <!-- Review Queue Tab -->
+        <div x-show="activeTab === 'review'">
+          {% include "admin/review.html" %}
+        </div>
+
+        <!-- Scan History Tab -->
+        <div x-show="activeTab === 'history'">
+          {% include "admin/history.html" %}
+        </div>
+
+        <!-- Settings Tab -->
+        <div x-show="activeTab === 'settings'">
+          {% include "admin/settings.html" %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS -->
+  <script src="/static/admin/app.js"></script>
+  <script src="/static/admin/dashboard.js"></script>
+  <script src="/static/admin/review.js"></script>
+  <script src="/static/admin/history.js"></script>
+  <script src="/static/admin/settings.js"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@ services:
     environment:
       GATEWAY_URL: "http://core:4000"
       ADMIN_API_KEY: "${ADMIN_API_KEY}"
+      SCANNER_ADMIN_KEY: "${SCANNER_ADMIN_KEY}"
       SCANNER_MODE: "${SCANNER_MODE:-dry-run}"
       SCANNER_WORKERS: "${SCANNER_WORKERS:-2}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"

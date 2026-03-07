@@ -131,6 +131,46 @@ class Scanner:
         tx_id = item.tx_id
         content_hash = item.content_hash
 
+        # Check admin overrides before scanning
+        if content_hash:
+            override = self.db.get_override(content_hash)
+            if override is not None:
+                if override.admin_verdict == "confirmed_clean":
+                    self.db.save_verdict(
+                        content_hash=content_hash,
+                        tx_id=tx_id,
+                        verdict=Verdict.CLEAN,
+                        matched_rules="[]",
+                        ml_score=None,
+                        scanner_version=self.settings.scanner_version,
+                    )
+                    logger.info(
+                        "scan_skipped_admin_override",
+                        extra={"tx_id": tx_id, "override": "confirmed_clean"},
+                    )
+                    return
+                elif override.admin_verdict == "confirmed_malicious":
+                    self.db.save_verdict(
+                        content_hash=content_hash,
+                        tx_id=tx_id,
+                        verdict=Verdict.MALICIOUS,
+                        matched_rules=override.original_rules or "[]",
+                        ml_score=None,
+                        scanner_version=self.settings.scanner_version,
+                    )
+                    if self.settings.scanner_mode == "enforce":
+                        success = await self.gateway.block_data(
+                            tx_id,
+                            content_hash,
+                            json.loads(override.original_rules or "[]"),
+                        )
+                        self.metrics.record_block(success)
+                    logger.warning(
+                        "scan_admin_override_malicious",
+                        extra={"tx_id": tx_id, "override": "confirmed_malicious"},
+                    )
+                    return
+
         # Fetch content from gateway
         content = await self.gateway.fetch_content(tx_id)
         if content is None:

@@ -34,6 +34,10 @@ class Settings:
     # DB
     db_path: str = "/app/data/scanner.db"
 
+    # Admin UI
+    admin_ui_enabled: bool = True
+    scanner_admin_key: str = ""
+
     # Logging
     log_level: str = "info"
 
@@ -63,6 +67,17 @@ def load_settings() -> Settings:
             f"SCANNER_MODE must be 'dry-run' or 'enforce', got '{mode}'"
         )
 
+    admin_ui_enabled = (
+        os.environ.get("ADMIN_UI_ENABLED", "true").lower() == "true"
+    )
+    scanner_admin_key = os.environ.get("SCANNER_ADMIN_KEY", "")
+
+    if admin_ui_enabled and not scanner_admin_key:
+        raise ValueError(
+            "SCANNER_ADMIN_KEY is required when ADMIN_UI_ENABLED=true. "
+            "Set a secret key for the admin dashboard, or set ADMIN_UI_ENABLED=false."
+        )
+
     backfill_enabled = (
         os.environ.get("BACKFILL_ENABLED", "false").lower() == "true"
     )
@@ -76,6 +91,8 @@ def load_settings() -> Settings:
     return Settings(
         gateway_url=gateway_url.rstrip("/"),
         admin_api_key=admin_api_key,
+        admin_ui_enabled=admin_ui_enabled,
+        scanner_admin_key=scanner_admin_key,
         scanner_port=int(os.environ.get("SCANNER_PORT", "3100")),
         scanner_workers=int(os.environ.get("SCANNER_WORKERS", "2")),
         scanner_mode=mode,

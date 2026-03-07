@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.backfill import BackfillScanner
 from src.config import Settings, load_settings
@@ -88,6 +89,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.state.metrics = metrics
     app.state.db = db
     app.state.settings = settings
+    app.state.gateway = gateway
+
+    # Mount admin UI if enabled
+    if settings.admin_ui_enabled:
+        from src.admin.routes import build_admin_router
+
+        app.mount(
+            "/static/admin",
+            StaticFiles(directory="src/static/admin"),
+            name="admin-static",
+        )
+        app.include_router(build_admin_router(app.state))
 
     @app.post("/scan", status_code=202)
     async def scan(payload: WebhookPayload):

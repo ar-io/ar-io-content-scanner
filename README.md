@@ -104,6 +104,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 |----------|----------|---------|-------------|
 | `GATEWAY_URL` | Yes | -- | ar-io-node internal URL (e.g., `http://core:4000`) |
 | `ADMIN_API_KEY` | Yes | -- | Must match the gateway's `ADMIN_API_KEY` |
+| `SCANNER_ADMIN_KEY` | Yes | -- | Secret key for the admin dashboard (separate from gateway key) |
 | `SCANNER_MODE` | No | `dry-run` | `dry-run` (log only) or `enforce` (auto-block) |
 | `SCANNER_PORT` | No | `3100` | HTTP server port |
 | `SCANNER_WORKERS` | No | `2` | Number of concurrent scan workers |
@@ -121,6 +122,19 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `BACKFILL_GATEWAY_DB_PATH` | No | -- | Gateway's `data.db` path (read-only, for hash→TX ID lookups) |
 | `BACKFILL_RATE` | No | `5` | Max files scanned per second during backfill |
 | `BACKFILL_INTERVAL_HOURS` | No | `24` | Hours between backfill sweeps (0 = one-shot) |
+| `ADMIN_UI_ENABLED` | No | `true` | Enable the admin dashboard at `/admin` |
+
+## Admin Dashboard
+
+Access the admin dashboard at `http://localhost:3100/admin`. Log in with your `SCANNER_ADMIN_KEY`.
+
+The dashboard provides:
+- **Dashboard** — real-time stats, system health, backfill status, recent detections
+- **Review Queue** — confirm or dismiss flagged content (MALICIOUS/SUSPICIOUS verdicts)
+- **Scan History** — searchable, filterable log of all scans with CSV export
+- **Settings** — current configuration, rule status, database stats, training data export
+
+Admin actions (confirm/dismiss) create overrides that persist across restarts. Dismissed content is never re-flagged. Confirmed content is always blocked in enforce mode.
 
 ## HTTP Endpoints
 

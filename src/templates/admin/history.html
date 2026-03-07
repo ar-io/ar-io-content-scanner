@@ -1,0 +1,118 @@
+<!-- Scan History Tab -->
+<div x-data="historyTab" x-init="init()">
+  <template x-if="error">
+    <div class="error-banner">
+      <span x-text="error"></span>
+      <button @click="error = ''" class="btn btn-sm btn-outline">Dismiss</button>
+    </div>
+  </template>
+
+  <!-- Search & Filters -->
+  <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
+    <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+      <!-- Search -->
+      <div style="position: relative; flex: 1; min-width: 200px;">
+        <input type="text" x-model="query" @input="onSearch()" placeholder="Search by TX ID or content hash..."
+          style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box;">
+      </div>
+
+      <!-- Export -->
+      <button class="btn btn-outline btn-sm" @click="exportCsv()">Export CSV</button>
+    </div>
+
+    <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; margin-top: 12px;">
+      <!-- Verdict filter -->
+      <div style="display: flex; gap: 4px; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Verdict:</span>
+        <template x-for="v in ['all','clean','suspicious','malicious','skipped']">
+          <button class="filter-btn" :class="{ active: verdictFilter === v }" @click="setFilter('verdictFilter', v)" x-text="v" style="text-transform: capitalize;"></button>
+        </template>
+      </div>
+
+      <!-- Source filter -->
+      <div style="display: flex; gap: 4px; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Source:</span>
+        <template x-for="s in ['all','webhook','backfill']">
+          <button class="filter-btn" :class="{ active: sourceFilter === s }" @click="setFilter('sourceFilter', s)" x-text="s" style="text-transform: capitalize;"></button>
+        </template>
+      </div>
+
+      <!-- Period filter -->
+      <div style="display: flex; gap: 4px; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Period:</span>
+        <template x-for="p in ['24h','7d','30d','all']">
+          <button class="filter-btn" :class="{ active: period === p }" @click="setFilter('period', p)" x-text="p"></button>
+        </template>
+      </div>
+
+      <div style="margin-left: auto; font-size: 0.8rem; color: var(--color-gray);">
+        <span x-text="total.toLocaleString()"></span> results
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div x-show="loading" style="text-align: center; padding: 40px;">
+    <div class="spinner" style="width: 24px; height: 24px;"></div>
+  </div>
+
+  <!-- Results table -->
+  <div x-show="!loading" class="card" style="padding: 0; overflow-x: auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Scanned At</th>
+          <th>TX ID</th>
+          <th>Verdict</th>
+          <th>Rules</th>
+          <th>ML Score</th>
+          <th>Source</th>
+          <th>Admin</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-if="items.length === 0">
+          <tr><td colspan="7" style="text-align: center; color: var(--color-gray); padding: 32px;">No results found</td></tr>
+        </template>
+        <template x-for="item in items" :key="item.content_hash">
+          <tr>
+            <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
+            <td>
+              <span class="mono" x-text="truncateId(item.tx_id, 16)"></span>
+            </td>
+            <td><span :class="badgeClass(item.verdict)" x-text="item.verdict"></span></td>
+            <td>
+              <template x-for="r in parseRules(item.matched_rules)">
+                <span class="pill" x-text="r"></span>
+              </template>
+            </td>
+            <td>
+              <span x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '—'"></span>
+            </td>
+            <td>
+              <span style="font-size: 0.8rem;" x-text="getSource(item.tx_id)"></span>
+            </td>
+            <td>
+              <template x-if="item.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red); font-size: 0.8rem;">&#10003;</span></template>
+              <template x-if="item.admin_status === 'confirmed_clean'"><span style="color: var(--color-green); font-size: 0.8rem;">&#10005;</span></template>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" x-show="!loading">
+    <button class="btn btn-sm btn-outline" @click="setPage(page - 1)" :disabled="page <= 1">Prev</button>
+    <span style="font-size: 0.85rem; color: var(--color-gray);">
+      Page <span x-text="page"></span> of <span x-text="pages"></span>
+    </span>
+    <button class="btn btn-sm btn-outline" @click="setPage(page + 1)" :disabled="page >= pages">Next</button>
+
+    <span style="margin-left: 16px; font-size: 0.8rem; color: var(--color-gray);">Per page:</span>
+    <template x-for="n in [25, 50, 100]">
+      <button class="filter-btn" :class="{ active: perPage === n }" @click="setPerPage(n)" x-text="n" style="padding: 2px 8px; font-size: 0.75rem;"></button>
+    </template>
+  </div>
+</div>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -55,3 +56,15 @@ class ScanResult(BaseModel):
     matched_rules: list[str] = []
     ml_score: float | None = None
     scan_duration_ms: int = 0
+
+
+@dataclass
+class AdminOverride:
+    content_hash: str
+    tx_id: str
+    admin_verdict: str  # 'confirmed_malicious' or 'confirmed_clean'
+    original_verdict: str
+    original_rules: str  # JSON array
+    original_ml_score: float | None
+    notes: str
+    created_at: int

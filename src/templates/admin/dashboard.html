@@ -1,0 +1,145 @@
+<!-- Dashboard Tab -->
+<div x-data="dashboardTab" x-init="init()">
+  <!-- Loading state -->
+  <div x-show="loading" style="text-align: center; padding: 60px;">
+    <div class="spinner" style="width: 32px; height: 32px;"></div>
+  </div>
+
+  <template x-if="error && !loading">
+    <div class="error-banner">
+      <span x-text="error"></span>
+      <button @click="load()" class="btn btn-sm btn-outline">Retry</button>
+    </div>
+  </template>
+
+  <template x-if="stats && !loading">
+    <div>
+      <!-- Auto-refresh indicator -->
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 8px; gap: 12px; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--color-gray);">Updated <span x-text="lastUpdatedAgo"></span></span>
+        <button @click="autoRefresh = !autoRefresh" class="btn btn-sm" :class="autoRefresh ? 'btn-outline' : 'btn-primary'" style="font-size: 0.7rem; padding: 2px 10px;">
+          <span x-text="autoRefresh ? 'Pause' : 'Resume'"></span>
+        </button>
+      </div>
+
+      <!-- Mode banner -->
+      <div class="mode-banner" :class="stats.mode === 'enforce' ? 'mode-enforce' : 'mode-dry-run'">
+        <span x-show="stats.mode === 'dry-run'">Scanner Mode: Dry Run &mdash; detections are logged but not blocked</span>
+        <span x-show="stats.mode === 'enforce'">Scanner Mode: Enforce &mdash; malicious content is auto-blocked</span>
+      </div>
+
+      <!-- Stats Cards -->
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+        <div class="stat-card">
+          <div class="stat-number" style="color: var(--color-primary);" x-text="stats.metrics.scans_total.toLocaleString()"></div>
+          <div class="stat-label">HTML pages analyzed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: var(--color-red);" x-text="stats.metrics.scans_by_verdict.malicious || 0"></div>
+          <div class="stat-label">threats detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: var(--color-amber);" x-text="stats.metrics.scans_by_verdict.suspicious || 0"></div>
+          <div class="stat-label">flagged for review</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: var(--color-green);" x-text="stats.metrics.blocks_sent || 0"></div>
+          <div class="stat-label">requests blocked</div>
+        </div>
+      </div>
+
+      <!-- System Health -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+        <!-- Scanner Health -->
+        <div class="card">
+          <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Scanner Health</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 0.85rem;">
+            <div style="color: var(--color-gray);">Uptime</div>
+            <div style="font-weight: 600;" x-text="uptimeFormatted"></div>
+            <div style="color: var(--color-gray);">Version</div>
+            <div style="font-weight: 600;" x-text="stats.version"></div>
+            <div style="color: var(--color-gray);">Queue Depth</div>
+            <div style="font-weight: 600;" :style="stats.metrics.queue_depth > 10 ? 'color: var(--color-red)' : ''" x-text="stats.metrics.queue_depth"></div>
+            <div style="color: var(--color-gray);">Workers</div>
+            <div style="font-weight: 600;" x-text="stats.workers"></div>
+            <div style="color: var(--color-gray);">Avg Scan Time</div>
+            <div style="font-weight: 600;" x-text="stats.metrics.avg_scan_ms + ' ms'"></div>
+            <div style="color: var(--color-gray);">Cache Hit Rate</div>
+            <div style="font-weight: 600;" x-text="cacheHitRate"></div>
+          </div>
+        </div>
+
+        <!-- Backfill Status -->
+        <div class="card">
+          <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Backfill Status</h3>
+          <template x-if="!stats.backfill.enabled">
+            <p style="color: var(--color-gray); font-size: 0.85rem;">Not configured</p>
+          </template>
+          <template x-if="stats.backfill.enabled">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 0.85rem;">
+              <div style="color: var(--color-gray);">Status</div>
+              <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed > 0 ? 'Complete' : 'In Progress'"></div>
+              <div style="color: var(--color-gray);">Files Scanned</div>
+              <div style="font-weight: 600;" x-text="stats.backfill.files_scanned.toLocaleString()"></div>
+              <div style="color: var(--color-gray);">Malicious Found</div>
+              <div style="font-weight: 600;" :style="stats.backfill.malicious_found > 0 ? 'color: var(--color-red)' : ''" x-text="stats.backfill.malicious_found"></div>
+              <div style="color: var(--color-gray);">Sweeps Completed</div>
+              <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed"></div>
+              <div style="color: var(--color-gray);">Last Sweep</div>
+              <div style="font-weight: 600;" x-text="formatTimestamp(stats.backfill.last_sweep_at)"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Recent Detections -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Recent Detections</h3>
+        <template x-if="stats.recent_detections.length === 0">
+          <p style="color: var(--color-gray); font-size: 0.85rem;">No detections yet</p>
+        </template>
+        <template x-if="stats.recent_detections.length > 0">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>TX ID</th>
+                <th>Verdict</th>
+                <th>Rules</th>
+                <th>ML Score</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="d in stats.recent_detections" :key="d.content_hash">
+                <tr>
+                  <td x-text="formatTimestamp(d.scanned_at)" style="white-space: nowrap;"></td>
+                  <td><span class="mono" x-text="truncateId(d.tx_id, 20)"></span></td>
+                  <td><span :class="badgeClass(d.verdict)" x-text="d.verdict"></span></td>
+                  <td>
+                    <template x-for="r in (JSON.parse(d.matched_rules || '[]'))">
+                      <span class="pill" x-text="r"></span>
+                    </template>
+                  </td>
+                  <td>
+                    <span x-text="d.ml_score !== null ? d.ml_score.toFixed(3) : '—'"></span>
+                    <template x-if="d.ml_score !== null">
+                      <span class="score-bar">
+                        <span class="score-bar-fill" :style="`width: ${Math.min(d.ml_score * 100, 100)}%; background: ${scoreColor(d.ml_score)}`"></span>
+                      </span>
+                    </template>
+                  </td>
+                  <td>
+                    <template x-if="d.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red);">Confirmed</span></template>
+                    <template x-if="d.admin_status === 'confirmed_clean'"><span style="color: var(--color-green);">Dismissed</span></template>
+                    <template x-if="!d.admin_status"><span style="color: var(--color-amber);">Pending</span></template>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+      </div>
+    </div>
+  </template>
+</div>

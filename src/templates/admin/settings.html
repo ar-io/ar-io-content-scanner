@@ -1,0 +1,126 @@
+<!-- Settings Tab -->
+<div x-data="settingsTab" x-init="init()">
+  <template x-if="error">
+    <div class="error-banner">
+      <span x-text="error"></span>
+      <button @click="load()" class="btn btn-sm btn-outline">Retry</button>
+    </div>
+  </template>
+
+  <div x-show="loading" style="text-align: center; padding: 40px;">
+    <div class="spinner" style="width: 24px; height: 24px;"></div>
+  </div>
+
+  <template x-if="config && !loading">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <!-- Configuration -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Configuration</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 0.85rem;">
+          <div style="color: var(--color-gray);">Scanner Mode</div>
+          <div>
+            <span :class="config.mode === 'enforce' ? 'badge badge-clean' : 'badge badge-suspicious'" x-text="config.mode"></span>
+          </div>
+          <div style="color: var(--color-gray);">Gateway URL</div>
+          <div class="mono" style="font-size: 0.8rem; word-break: break-all;" x-text="config.gateway_url"></div>
+          <div style="color: var(--color-gray);">Version</div>
+          <div style="font-weight: 600;" x-text="config.version"></div>
+          <div style="color: var(--color-gray);">Workers</div>
+          <div style="font-weight: 600;" x-text="config.workers"></div>
+          <div style="color: var(--color-gray);">ML Model</div>
+          <div>
+            <span class="status-dot" :class="config.ml_model_enabled ? 'enabled' : 'disabled'"></span>
+            <span x-text="config.ml_model_enabled ? 'Enabled' : 'Disabled'"></span>
+          </div>
+          <div style="color: var(--color-gray);">Max Scan Size</div>
+          <div style="font-weight: 600;" x-text="formatScanBytes()"></div>
+          <div style="color: var(--color-gray);">Scan Timeout</div>
+          <div style="font-weight: 600;" x-text="formatTimeout()"></div>
+        </div>
+      </div>
+
+      <!-- Rules -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Detection Rules</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem;">
+          <div style="display: flex; align-items: center;">
+            <span class="status-dot" :class="config.rules.seed_phrase ? 'enabled' : 'disabled'"></span>
+            <span>Seed Phrase Harvesting</span>
+          </div>
+          <div style="display: flex; align-items: center;">
+            <span class="status-dot" :class="config.rules.external_credential_form ? 'enabled' : 'disabled'"></span>
+            <span>External Credential Form</span>
+          </div>
+          <div style="display: flex; align-items: center;">
+            <span class="status-dot" :class="config.rules.wallet_impersonation ? 'enabled' : 'disabled'"></span>
+            <span>Wallet Impersonation</span>
+          </div>
+          <div style="display: flex; align-items: center;">
+            <span class="status-dot" :class="config.rules.obfuscated_loader ? 'enabled' : 'disabled'"></span>
+            <span>Obfuscated Loader</span>
+          </div>
+        </div>
+
+        <template x-if="config.backfill">
+          <div style="margin-top: 20px;">
+            <h4 style="font-size: 0.85rem; font-weight: 700; margin: 0 0 8px;">Backfill</h4>
+            <template x-if="!config.backfill.enabled">
+              <p style="color: var(--color-gray); font-size: 0.85rem;">Not configured</p>
+            </template>
+            <template x-if="config.backfill.enabled">
+              <div style="font-size: 0.85rem; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px;">
+                <div style="color: var(--color-gray);">Rate</div>
+                <div x-text="config.backfill.rate + ' files/sec'"></div>
+                <div style="color: var(--color-gray);">Interval</div>
+                <div x-text="config.backfill.interval_hours + 'h'"></div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- Database Stats -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Database</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 0.85rem;">
+          <div style="color: var(--color-gray);">Total Verdicts</div>
+          <div style="font-weight: 600;" x-text="config.db_stats.total_verdicts.toLocaleString()"></div>
+          <template x-for="[k, v] in Object.entries(config.db_stats.verdicts_by_type)">
+            <template x-if="true">
+              <div style="display: contents;">
+                <div style="color: var(--color-gray); padding-left: 16px;" x-text="k"></div>
+                <div x-text="v.toLocaleString()"></div>
+              </div>
+            </template>
+          </template>
+          <div style="color: var(--color-gray);">Admin Overrides</div>
+          <div style="font-weight: 600;" x-text="config.db_stats.total_overrides"></div>
+          <div style="color: var(--color-gray);">Queue Depth</div>
+          <div style="font-weight: 600;" x-text="config.db_stats.queue_depth"></div>
+          <div style="color: var(--color-gray);">DB File Size</div>
+          <div style="font-weight: 600;" x-text="formatBytes(config.db_stats.db_size_bytes)"></div>
+        </div>
+      </div>
+
+      <!-- Training Data Export -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Training Data</h3>
+        <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 12px;">
+          Export operator-labeled verdicts for ML model retraining.
+          Confirmed and dismissed items provide ground-truth labels.
+        </p>
+        <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; font-size: 0.85rem;">
+          <span style="color: var(--color-red);">
+            <strong x-text="config.db_stats.overrides_by_type?.confirmed_malicious || 0"></strong> confirmed malicious
+          </span>
+          <span style="color: var(--color-green);">
+            <strong x-text="config.db_stats.overrides_by_type?.confirmed_clean || 0"></strong> dismissed
+          </span>
+        </div>
+        <button class="btn btn-primary btn-sm" @click="exportTraining()" :disabled="config.db_stats.total_overrides === 0">
+          Export Training Data (CSV)
+        </button>
+      </div>
+    </div>
+  </template>
+</div>

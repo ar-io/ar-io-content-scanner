@@ -244,6 +244,22 @@ class BackfillScanner:
             stats["skipped_cached"] += 1
             return
 
+        # 1b. Admin override?
+        override = self.db.get_override(hash_str)
+        if override is not None:
+            if override.admin_verdict == "confirmed_clean":
+                self.db.save_verdict(
+                    content_hash=hash_str,
+                    tx_id="backfill",
+                    verdict=Verdict.CLEAN,
+                    matched_rules="[]",
+                    ml_score=None,
+                    scanner_version=self.settings.scanner_version,
+                )
+                stats["clean"] += 1
+                return
+            # confirmed_malicious handled after scan lookup below
+
         # 2. Content-sniff for HTML
         head = await loop.run_in_executor(None, self._read_head, filepath)
         if head is None:
