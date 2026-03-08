@@ -168,6 +168,104 @@ class TestReview:
         assert data["total"] == 0
 
 
+class TestBulkActions:
+    def _seed(self, db):
+        db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["seed-phrase-harvesting"]', 0.99, "0.1.0")
+        db.save_verdict("h2", "tx2", Verdict.SUSPICIOUS, '[]', 0.97, "0.1.0")
+        db.save_verdict("h3", "tx3", Verdict.MALICIOUS, '["wallet-impersonation"]', 0.95, "0.1.0")
+
+    def test_bulk_confirm(self, client, db):
+        self._seed(db)
+        resp = client.post(
+            "/api/admin/bulk/confirm",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": ["h1", "h2", "h3"], "notes": "batch confirmed"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["processed"] == 3
+        assert data["succeeded"] == 3
+        assert data["failed"] == 0
+
+        for h in ["h1", "h2", "h3"]:
+            override = db.get_override(h)
+            assert override is not None
+            assert override.admin_verdict == "confirmed_malicious"
+            assert override.notes == "batch confirmed"
+
+    def test_bulk_dismiss(self, client, db):
+        self._seed(db)
+        resp = client.post(
+            "/api/admin/bulk/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": ["h1", "h2"], "notes": "false positives"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["succeeded"] == 2
+        assert data["failed"] == 0
+
+        for h in ["h1", "h2"]:
+            override = db.get_override(h)
+            assert override is not None
+            assert override.admin_verdict == "confirmed_clean"
+            v = db.get_verdict(h)
+            assert v.verdict == Verdict.CLEAN
+
+    def test_bulk_confirm_partial_failure(self, client, db):
+        db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '[]', 0.99, "0.1.0")
+        resp = client.post(
+            "/api/admin/bulk/confirm",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": ["h1", "nonexistent"]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["succeeded"] == 1
+        assert data["failed"] == 1
+        assert data["errors"][0]["hash"] == "nonexistent"
+
+    def test_bulk_confirm_empty_list(self, client):
+        resp = client.post(
+            "/api/admin/bulk/confirm",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": []},
+        )
+        assert resp.status_code == 400
+
+    def test_bulk_confirm_exceeds_limit(self, client):
+        hashes = [f"h{i}" for i in range(101)]
+        resp = client.post(
+            "/api/admin/bulk/confirm",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": hashes},
+        )
+        assert resp.status_code == 400
+
+    def test_bulk_requires_auth(self, client):
+        resp = client.post(
+            "/api/admin/bulk/confirm",
+            json={"hashes": ["h1"]},
+        )
+        assert resp.status_code == 401
+
+    def test_bulk_dismiss_updates_review_queue(self, client, db):
+        """Bulk-dismissed items should no longer appear in pending review."""
+        self._seed(db)
+        client.post(
+            "/api/admin/bulk/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": ["h1", "h2", "h3"]},
+        )
+        resp = client.get("/api/admin/review?status=pending", headers=AUTH)
+        data = resp.json()
+        assert data["total"] == 0
+
+        resp = client.get("/api/admin/review?status=dismissed", headers=AUTH)
+        data = resp.json()
+        assert data["total"] == 3
+
+
 class TestHistory:
     def _seed(self, db):
         db.save_verdict("h1", "tx1", Verdict.CLEAN, '[]', 0.1, "0.1.0")

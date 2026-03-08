@@ -20,10 +20,14 @@ document.addEventListener('alpine:init', function () {
       confirmDialog: {
         show: false,
         hash: '',
+        hashes: [],
         action: '',
         notes: '',
         loading: false
       },
+
+      // Bulk selection
+      selectedHashes: {},
 
       // Screenshots
       screenshotUrls: {},
@@ -42,6 +46,7 @@ document.addEventListener('alpine:init', function () {
 
       async load() {
         this.loading = true;
+        this.selectedHashes = {};
         try {
           var params = new URLSearchParams({
             q: this.searchQuery,
@@ -89,6 +94,76 @@ document.addEventListener('alpine:init', function () {
         }, 300);
       },
 
+      // --- Bulk selection ---
+      selectedCount() {
+        var hashes = this.selectedHashes;
+        var count = 0;
+        for (var k in hashes) {
+          if (hashes[k]) count++;
+        }
+        return count;
+      },
+
+      allPageSelected() {
+        var self = this;
+        var pending = this.items.filter(function (i) { return !i.admin_override; });
+        if (pending.length === 0) return false;
+        return pending.every(function (i) { return self.selectedHashes[i.content_hash]; });
+      },
+
+      toggleSelect(hash) {
+        var updated = Object.assign({}, this.selectedHashes);
+        if (updated[hash]) {
+          delete updated[hash];
+        } else {
+          updated[hash] = true;
+        }
+        this.selectedHashes = updated;
+      },
+
+      toggleSelectAll() {
+        if (this.allPageSelected()) {
+          this.selectedHashes = {};
+        } else {
+          var updated = {};
+          this.items.forEach(function (i) {
+            if (!i.admin_override) updated[i.content_hash] = true;
+          });
+          this.selectedHashes = updated;
+        }
+      },
+
+      clearSelection() {
+        this.selectedHashes = {};
+      },
+
+      getSelectedArray() {
+        var hashes = this.selectedHashes;
+        return Object.keys(hashes).filter(function (k) { return hashes[k]; });
+      },
+
+      promptBulkConfirm() {
+        this.confirmDialog = {
+          show: true,
+          hash: '',
+          hashes: this.getSelectedArray(),
+          action: 'bulk_confirm',
+          notes: '',
+          loading: false
+        };
+      },
+
+      promptBulkDismiss() {
+        this.confirmDialog = {
+          show: true,
+          hash: '',
+          hashes: this.getSelectedArray(),
+          action: 'bulk_dismiss',
+          notes: '',
+          loading: false
+        };
+      },
+
       // --- Screenshot loading ---
       loadScreenshots(items) {
         // Revoke old blob URLs to prevent memory leak
@@ -121,6 +196,7 @@ document.addEventListener('alpine:init', function () {
         this.confirmDialog = {
           show: true,
           hash: hash,
+          hashes: [],
           action: 'confirm',
           notes: '',
           loading: false
@@ -131,6 +207,7 @@ document.addEventListener('alpine:init', function () {
         this.confirmDialog = {
           show: true,
           hash: hash,
+          hashes: [],
           action: 'dismiss',
           notes: '',
           loading: false
@@ -141,7 +218,29 @@ document.addEventListener('alpine:init', function () {
         var dialog = this.confirmDialog;
         dialog.loading = true;
         try {
-          if (dialog.action === 'revert') {
+          if (dialog.action === 'bulk_confirm' || dialog.action === 'bulk_dismiss') {
+            var bulkEndpoint = dialog.action === 'bulk_confirm' ? 'confirm' : 'dismiss';
+            var resp = await api('/api/admin/bulk/' + bulkEndpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ hashes: dialog.hashes, notes: dialog.notes })
+            });
+            if (!resp.ok) throw new Error('Request failed (HTTP ' + resp.status + ')');
+            var result = await resp.json();
+            dialog.show = false;
+            if (result.failed > 0) {
+              Alpine.store('toast').show(
+                result.succeeded + ' of ' + result.processed + ' items processed. ' + result.failed + ' failed.',
+                result.succeeded > 0 ? 'success' : 'error'
+              );
+            } else {
+              var msg = dialog.action === 'bulk_confirm'
+                ? result.succeeded + ' items confirmed as malicious'
+                : result.succeeded + ' items dismissed as false positive';
+              Alpine.store('toast').show(msg, 'success');
+            }
+            this.clearSelection();
+          } else if (dialog.action === 'revert') {
             var resp = await api('/api/admin/review/' + dialog.hash + '/revert', { method: 'POST' });
             if (!resp.ok) throw new Error('Request failed (HTTP ' + resp.status + ')');
             dialog.show = false;
@@ -172,6 +271,7 @@ document.addEventListener('alpine:init', function () {
         this.confirmDialog = {
           show: true,
           hash: hash,
+          hashes: [],
           action: 'revert',
           notes: '',
           loading: false

@@ -262,6 +262,147 @@ def build_admin_router(app_state) -> APIRouter:
 
         return {"status": "dismissed"}
 
+    @router.post("/api/admin/bulk/confirm")
+    async def bulk_confirm(
+        request: Request,
+        _key: str = Depends(auth),
+    ):
+        db = _state.db
+        body = await request.json()
+        hashes = body.get("hashes", [])
+        notes = str(body.get("notes", ""))[:500]
+
+        if not isinstance(hashes, list) or len(hashes) == 0:
+            raise HTTPException(
+                status_code=400, detail="hashes must be a non-empty array"
+            )
+        if len(hashes) > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum 100 items per bulk action",
+            )
+
+        succeeded = 0
+        errors = []
+        blocked_tx_ids = []
+
+        for h in hashes:
+            if not isinstance(h, str) or not _HASH_PATTERN.match(h):
+                errors.append({"hash": str(h)[:64], "error": "Invalid hash"})
+                continue
+
+            verdict = db.get_verdict(h)
+            if verdict is None:
+                errors.append({"hash": h, "error": "Not found"})
+                continue
+
+            db.save_override(
+                content_hash=h,
+                tx_id=verdict.tx_id,
+                admin_verdict="confirmed_malicious",
+                original_verdict=verdict.verdict.value,
+                original_rules=verdict.matched_rules or "[]",
+                original_ml_score=verdict.ml_score,
+                notes=notes,
+            )
+
+            if settings.scanner_mode == "enforce":
+                gateway = _state.gateway
+                rules = json.loads(verdict.matched_rules or "[]")
+                success = await gateway.block_data(
+                    verdict.tx_id, h, rules
+                )
+                if success:
+                    blocked_tx_ids.append(verdict.tx_id)
+
+            if _state.screenshot:
+                _state.screenshot.delete(h)
+
+            succeeded += 1
+
+        logger.info(
+            "bulk_confirm",
+            extra={
+                "total": len(hashes),
+                "succeeded": succeeded,
+                "errors": len(errors),
+            },
+        )
+
+        return {
+            "processed": len(hashes),
+            "succeeded": succeeded,
+            "failed": len(errors),
+            "errors": errors,
+            "blocked_tx_ids": blocked_tx_ids,
+        }
+
+    @router.post("/api/admin/bulk/dismiss")
+    async def bulk_dismiss(
+        request: Request,
+        _key: str = Depends(auth),
+    ):
+        db = _state.db
+        body = await request.json()
+        hashes = body.get("hashes", [])
+        notes = str(body.get("notes", ""))[:500]
+
+        if not isinstance(hashes, list) or len(hashes) == 0:
+            raise HTTPException(
+                status_code=400, detail="hashes must be a non-empty array"
+            )
+        if len(hashes) > 100:
+            raise HTTPException(
+                status_code=400,
+                detail="Maximum 100 items per bulk action",
+            )
+
+        succeeded = 0
+        errors = []
+
+        for h in hashes:
+            if not isinstance(h, str) or not _HASH_PATTERN.match(h):
+                errors.append({"hash": str(h)[:64], "error": "Invalid hash"})
+                continue
+
+            verdict = db.get_verdict(h)
+            if verdict is None:
+                errors.append({"hash": h, "error": "Not found"})
+                continue
+
+            db.save_override(
+                content_hash=h,
+                tx_id=verdict.tx_id,
+                admin_verdict="confirmed_clean",
+                original_verdict=verdict.verdict.value,
+                original_rules=verdict.matched_rules or "[]",
+                original_ml_score=verdict.ml_score,
+                notes=notes,
+            )
+
+            db.update_verdict(h, Verdict.CLEAN)
+
+            if _state.screenshot:
+                _state.screenshot.delete(h)
+
+            succeeded += 1
+
+        logger.info(
+            "bulk_dismiss",
+            extra={
+                "total": len(hashes),
+                "succeeded": succeeded,
+                "errors": len(errors),
+            },
+        )
+
+        return {
+            "processed": len(hashes),
+            "succeeded": succeeded,
+            "failed": len(errors),
+            "errors": errors,
+        }
+
     @router.post("/api/admin/review/{content_hash}/revert")
     async def review_revert(
         content_hash: str,

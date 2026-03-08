@@ -153,6 +153,24 @@ function parseRules(rulesStr) {
   catch (e) { return []; }
 }
 
+function ruleDescription(ruleName) {
+  var descriptions = {
+    'seed-phrase-harvesting': 'Multiple text input fields combined with seed phrase / recovery phrase terminology \u2014 a pattern used to steal wallet recovery phrases.',
+    'external-credential-form': 'Password field with form data sent to an external server \u2014 credentials entered here would be exfiltrated to an attacker.',
+    'wallet-impersonation': 'Impersonates a cryptocurrency wallet brand (MetaMask, Phantom, Ledger, etc.) while requesting password or key input.',
+    'obfuscated-loader': 'Heavily obfuscated JavaScript dynamically injects content using encoded payloads \u2014 hides malicious content from scanners.'
+  };
+  return descriptions[ruleName] || ruleName;
+}
+
+function mlScoreDescription(score) {
+  if (score === null || score === undefined) return null;
+  if (score >= 0.95) return 'ML confidence: ' + (score * 100).toFixed(1) + '% \u2014 high confidence phishing pattern.';
+  if (score >= 0.80) return 'ML confidence: ' + (score * 100).toFixed(1) + '% \u2014 strong phishing indicators.';
+  if (score >= 0.50) return 'ML confidence: ' + (score * 100).toFixed(1) + '% \u2014 moderate phishing indicators.';
+  return null;
+}
+
 async function downloadCsv(path, filename) {
   var resp = await api(path);
   var blob = await resp.blob();
