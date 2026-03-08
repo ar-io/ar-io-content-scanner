@@ -347,10 +347,10 @@ class BackfillScanner:
             None, self.engine.evaluate, html, soup
         )
 
-        # 5. Look up TX IDs for malicious hits
+        # 5. Look up TX IDs for malicious and suspicious hits
         tx_id = "backfill"
         tx_ids = []
-        if result.verdict == Verdict.MALICIOUS:
+        if result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS):
             tx_ids = self._lookup_tx_ids(gateway_db, hash_str)
             if tx_ids:
                 tx_id = tx_ids[0]
