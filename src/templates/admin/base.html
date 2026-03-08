@@ -34,7 +34,7 @@
 
       <form @submit.prevent="logging = true; await $store.auth.login(key); logging = false;">
         <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray);">Admin Key</label>
-        <input type="password" x-model="key" placeholder="Enter your SCANNER_ADMIN_KEY" required autofocus>
+        <input type="password" x-model="key" placeholder="Enter your SCANNER_ADMIN_KEY" required autofocus autocomplete="off">
         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 16px; justify-content: center;" :disabled="logging || !key">
           <span x-show="!logging">Sign In</span>
           <span x-show="logging" class="spinner"></span>
@@ -43,8 +43,9 @@
     </div>
   </div>
 
-  <!-- Main Application -->
-  <div x-show="$store.auth.authenticated" x-cloak>
+  <!-- Main Application (x-if ensures tabs only init after auth succeeds) -->
+  <template x-if="$store.auth.authenticated">
+  <div>
     <!-- Header -->
     <div class="header">
       <div class="header-brand">
@@ -96,6 +97,7 @@
       </div>
     </div>
   </div>
+  </template>
 
   <!-- JS -->
   <script src="/static/admin/app.js"></script>
