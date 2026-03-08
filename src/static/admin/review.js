@@ -142,16 +142,18 @@ document.addEventListener('alpine:init', function () {
         dialog.loading = true;
         try {
           if (dialog.action === 'revert') {
-            await api('/api/admin/review/' + dialog.hash + '/revert', { method: 'POST' });
+            var resp = await api('/api/admin/review/' + dialog.hash + '/revert', { method: 'POST' });
+            if (!resp.ok) throw new Error('Request failed (HTTP ' + resp.status + ')');
             dialog.show = false;
             Alpine.store('toast').show('Override reverted — item returned to pending review', 'success');
           } else {
             var endpoint = dialog.action === 'confirm' ? 'confirm' : 'dismiss';
-            await api('/api/admin/review/' + dialog.hash + '/' + endpoint, {
+            var resp = await api('/api/admin/review/' + dialog.hash + '/' + endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ notes: dialog.notes })
             });
+            if (!resp.ok) throw new Error('Request failed (HTTP ' + resp.status + ')');
             dialog.show = false;
             if (dialog.action === 'confirm') {
               Alpine.store('toast').show('Content confirmed as malicious', 'success');

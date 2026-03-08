@@ -355,13 +355,13 @@
           <!-- Actions in modal -->
           <template x-if="!detail.admin_override">
             <div style="display: flex; gap: 10px; margin-top: 20px;">
-              <button class="btn btn-danger" @click="closeModal(); promptConfirm(detail.content_hash);">Confirm Malicious</button>
-              <button class="btn btn-outline" @click="closeModal(); promptDismiss(detail.content_hash);">Dismiss (False Positive)</button>
+              <button class="btn btn-danger" @click="promptConfirm(detail.content_hash); closeModal();">Confirm Malicious</button>
+              <button class="btn btn-outline" @click="promptDismiss(detail.content_hash); closeModal();">Dismiss (False Positive)</button>
             </div>
           </template>
           <template x-if="detail.admin_override">
             <div style="display: flex; gap: 10px; margin-top: 20px;">
-              <button class="btn btn-outline" @click="closeModal(); promptRevert(detail.content_hash);">Revert Override</button>
+              <button class="btn btn-outline" @click="promptRevert(detail.content_hash); closeModal();">Revert Override</button>
             </div>
           </template>
         </div>
