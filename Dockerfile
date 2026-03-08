@@ -4,17 +4,18 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-RUN useradd -m -u 1000 scanner && mkdir -p /app/data && chown scanner:scanner /app/data
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 1000 scanner
 
 COPY xgboost_model.pkl .
 COPY src/ src/
-
-USER scanner
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 EXPOSE 3100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3100/health')" || exit 1
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "-m", "src.server"]
