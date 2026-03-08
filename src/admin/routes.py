@@ -83,8 +83,10 @@ def build_admin_router(app_state) -> APIRouter:
                 "import_stats": db.get_feed_import_stats(),
             },
             "safe_browsing": {
-                "enabled": bool(settings.safe_browsing_api_key),
+                "enabled": True,
+                "api_key_set": bool(settings.safe_browsing_api_key),
                 "domain_flagged": data.get("safe_browsing_domain_flagged", False),
+                "domain_threats": data.get("safe_browsing_domain_threats", []),
                 "checks": data.get("safe_browsing_checks", 0),
                 "flagged": data.get("safe_browsing_flagged", 0),
                 "escalations": data.get("safe_browsing_escalations", 0),
@@ -594,7 +596,7 @@ def build_admin_router(app_state) -> APIRouter:
                 "on_demand": settings.verdict_feed_on_demand,
             },
             "safe_browsing": {
-                "enabled": bool(settings.safe_browsing_api_key),
+                "enabled": True,
                 "api_key_set": bool(settings.safe_browsing_api_key),
                 "check_interval": settings.safe_browsing_check_interval,
             },

@@ -74,12 +74,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
             feed_poller = FeedPoller(settings, db, feed_client, gateway, metrics)
 
-    # Safe Browsing client
-    safe_browsing = None
-    if settings.safe_browsing_api_key:
-        safe_browsing = SafeBrowsingClient(
-            api_key=settings.safe_browsing_api_key,
-        )
+    # Safe Browsing client — domain monitoring uses the Transparency Report
+    # (no API key needed). The Lookup API for individual URL checks is optional
+    # and requires SAFE_BROWSING_API_KEY.
+    safe_browsing = SafeBrowsingClient(
+        api_key=settings.safe_browsing_api_key,
+    )
 
     scanner = Scanner(
         settings, db, gateway, engine, metrics,
@@ -127,7 +127,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "screenshots": screenshot.available if screenshot else False,
                 "verdict_feed": bool(settings.verdict_api_key),
                 "verdict_feed_peers": len(settings.verdict_feed_urls),
-                "safe_browsing": bool(safe_browsing),
+                "safe_browsing": True,
+                "safe_browsing_api_key": bool(settings.safe_browsing_api_key),
             },
         )
         yield
@@ -136,8 +137,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             await asyncio.wait_for(pool.stop(), timeout=10)
         except asyncio.TimeoutError:
             logger.warning("Worker pool shutdown timed out after 10s")
-        if safe_browsing:
-            await safe_browsing.close()
+        await safe_browsing.close()
         if feed_client:
             await feed_client.close()
         if screenshot:

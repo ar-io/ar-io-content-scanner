@@ -149,7 +149,7 @@ Key metrics to watch:
 - **feed_on_demand_hits** growing: Peer lookups are saving local scan work.
 - **safe_browsing_domain_flagged** = true: Your gateway domain is on Google's blocklist. Users will see browser warnings. Review and block flagged content immediately.
 - **safe_browsing_escalations** > 0: SUSPICIOUS verdicts were escalated to MALICIOUS because Google also flagged them.
-- **safe_browsing_errors** > 0: API connectivity issues. Check your `SAFE_BROWSING_API_KEY` and network.
+- **safe_browsing_errors** > 0: API connectivity issues. If using the Lookup API, check your `SAFE_BROWSING_API_KEY` and network. Domain monitoring works without an API key.
 
 ### Logs
 
@@ -227,7 +227,7 @@ Example log entry for a blocked phishing page:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SAFE_BROWSING_API_KEY` | *(none)* | Google Safe Browsing API key (enables the integration) |
+| `SAFE_BROWSING_API_KEY` | *(none)* | Google Safe Browsing API key (optional, enables URL-level Lookup API checks) |
 | `SAFE_BROWSING_CHECK_INTERVAL` | `300` | Seconds between periodic domain + URL monitoring (min 60) |
 
 ### Screenshots
@@ -447,12 +447,19 @@ Imported MALICIOUS verdicts only trigger blocks in `enforce` mode. Check `SCANNE
 
 ## Google Safe Browsing Integration
 
-Optional integration with Google's Safe Browsing Lookup API v4 provides two capabilities:
+The scanner automatically monitors your gateway domain against Google Safe Browsing — **no API key required**. Domain monitoring uses Google's Transparency Report to check site-level status (the same data shown on [transparencyreport.google.com](https://transparencyreport.google.com/safe-browsing/search)). If your domain is flagged, a warning banner with threat types appears on the admin dashboard.
 
-1. **On-verdict checks**: After a scan produces a MALICIOUS or SUSPICIOUS verdict, the URL is checked against Google Safe Browsing. If SUSPICIOUS and Google also flags it, the verdict is escalated to MALICIOUS (two independent signals — consistent with the project's conjunctive detection philosophy).
-2. **Periodic domain monitoring**: A background loop checks your gateway domain + recent malicious/suspicious URLs against Google every `SAFE_BROWSING_CHECK_INTERVAL` seconds (default: 300). This alerts you if your gateway domain gets added to Google's blocklist.
+Optionally, you can add a `SAFE_BROWSING_API_KEY` to enable URL-level checks via the Lookup API v4 for individual content URLs.
 
-### Getting a Safe Browsing API Key
+### Domain Monitoring (Automatic)
+
+A background loop checks your gateway domain every `SAFE_BROWSING_CHECK_INTERVAL` seconds (default: 300). This detects site-level flags like SOCIAL_ENGINEERING, MALWARE, and UNWANTED_SOFTWARE.
+
+`GATEWAY_PUBLIC_URL` must be set for domain monitoring to work — without it, the monitor loop logs a warning and exits.
+
+### URL-Level Checks (Optional)
+
+To also check individual flagged content URLs against Google:
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select an existing one)
@@ -463,21 +470,22 @@ Optional integration with Google's Safe Browsing Lookup API v4 provides two capa
 
 ```bash
 SAFE_BROWSING_API_KEY=your-google-api-key
-SAFE_BROWSING_CHECK_INTERVAL=300  # optional, default 5 minutes
 ```
 
 The Safe Browsing API is free for non-commercial use (up to 10,000 requests/day).
 
-`GATEWAY_PUBLIC_URL` must be set for periodic monitoring to work — without it, the monitor loop logs a warning and exits.
+When configured:
+- **On-verdict checks**: After a scan produces a MALICIOUS or SUSPICIOUS verdict, the URL is checked against Google. If SUSPICIOUS and Google also flags it, the verdict is escalated to MALICIOUS (two independent signals — consistent with the project's conjunctive detection philosophy).
+- **Periodic URL monitoring**: Recent malicious/suspicious content URLs are checked against Google during the periodic monitoring loop.
 
 ### Fail-Open Design
 
-Google Safe Browsing API errors **never** affect scanning or blocking. If the API is unreachable, rate-limited, or returns an error, the scanner proceeds with its own verdict unchanged. This ensures the scanner remains fully functional even if the external API is down.
+All Safe Browsing checks (domain and URL-level) are fail-open. API errors **never** affect scanning or blocking. If the Transparency Report or Lookup API is unreachable, the scanner proceeds with its own verdict unchanged.
 
 ### Dashboard
 
 The admin dashboard shows:
-- A red warning banner if your gateway domain is flagged by Google Safe Browsing
+- A red warning banner if your gateway domain is flagged by Google Safe Browsing, including specific threat types
 - A **Google Safe Browsing** health card on the Dashboard tab with domain status, API check count, URLs flagged, escalations, and check interval
 - A "Google Safe Browsing" badge on review items that Google has flagged
 - Safe Browsing status in the detail view for individual items
@@ -501,7 +509,7 @@ The monitor loop waits 15 seconds after startup before the first check. This is 
 Set `GATEWAY_PUBLIC_URL` to your gateway's public URL. Without it, the periodic monitor cannot construct URLs to check.
 
 **`safe_browsing_errors` increasing:**
-Check your API key is valid and has the Safe Browsing API enabled. Check network connectivity to `safebrowsing.googleapis.com`. Note that errors are fail-open and do not affect scanning.
+If you have `SAFE_BROWSING_API_KEY` set, check that the key is valid and has the Safe Browsing API enabled. Check network connectivity to `safebrowsing.googleapis.com`. Note that errors are fail-open and do not affect scanning. Domain monitoring via the Transparency Report works independently of the API key.
 
 **Gateway domain flagged:**
 Review the admin dashboard's review queue for malicious content. Confirm and block any phishing pages. After blocking, request a review via [Google Search Console](https://search.google.com/search-console).

@@ -410,9 +410,11 @@ class Scanner:
 
         # Safe Browsing corroboration: check flagged content against Google
         # before blocking. Escalate SUSPICIOUS→MALICIOUS if Google agrees.
+        # Requires SAFE_BROWSING_API_KEY for the Lookup API.
         if (
             result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
             and self.safe_browsing
+            and self.safe_browsing.api_key
             and self.settings.gateway_public_url
         ):
             await self._check_safe_browsing(

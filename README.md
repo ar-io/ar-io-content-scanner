@@ -95,7 +95,7 @@ MALICIOUS        any            MALICIOUS (auto-block in enforce mode)
 CLEAN            >= 0.95        SUSPICIOUS (log only)
 CLEAN            < 0.95         CLEAN
 
-Post-scan (if SAFE_BROWSING_API_KEY set):
+Post-scan (if SAFE_BROWSING_API_KEY set, optional):
 SUSPICIOUS + Google Safe Browsing flags URL → escalated to MALICIOUS
 ```
 
@@ -139,7 +139,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `VERDICT_FEED_TRUST_MODE` | No | `malicious_only` | `malicious_only` or `all` |
 | `VERDICT_FEED_ON_DEMAND` | No | `true` | Check peers before scanning locally |
 | `VERDICT_FEED_REQUEST_TIMEOUT_MS` | No | `5000` | Timeout for peer API requests |
-| `SAFE_BROWSING_API_KEY` | No | -- | Google Safe Browsing API key (enables SB integration) |
+| `SAFE_BROWSING_API_KEY` | No | -- | Google Safe Browsing API key (optional, enables URL-level checks via Lookup API) |
 | `SAFE_BROWSING_CHECK_INTERVAL` | No | `300` | Seconds between periodic domain + URL monitoring (min 60) |
 
 ## Admin Dashboard
@@ -234,9 +234,17 @@ VERDICT_FEED_URLS=http://scanner-a:3100,http://scanner-c:3100
 
 ## Google Safe Browsing
 
-Optional integration with Google's Safe Browsing Lookup API v4 provides a second independent signal for threat detection and monitors your gateway domain for blocklist status.
+The scanner automatically monitors your gateway domain against Google Safe Browsing via the Transparency Report — **no API key required**. If your domain is flagged, a warning banner appears on the admin dashboard.
 
-### Getting a Safe Browsing API Key
+Optionally, you can add a Google Safe Browsing API key to enable URL-level checks via the Lookup API v4, which provides a second independent signal for individual content URLs.
+
+### Domain Monitoring (Automatic)
+
+A background loop checks your gateway domain against Google's Transparency Report every `SAFE_BROWSING_CHECK_INTERVAL` seconds. This detects site-level flags (the same status shown on [Google's Transparency Report](https://transparencyreport.google.com/safe-browsing/search)). Requires `GATEWAY_PUBLIC_URL` to be set.
+
+### URL-Level Checks (Optional, requires API key)
+
+To enable per-URL checks via the Lookup API v4:
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project (or select an existing one)
@@ -247,20 +255,19 @@ Optional integration with Google's Safe Browsing Lookup API v4 provides a second
 
 ```bash
 SAFE_BROWSING_API_KEY=your-google-api-key
-SAFE_BROWSING_CHECK_INTERVAL=300  # optional, default 5 minutes
 ```
 
 The Safe Browsing API is free for non-commercial use (up to 10,000 requests/day).
 
-### What It Does
+When configured, the scanner checks individual flagged content URLs against Google. If a SUSPICIOUS verdict is corroborated by Google, it is escalated to MALICIOUS (two independent signals).
 
-- **On-verdict check**: When a scan produces a MALICIOUS or SUSPICIOUS verdict, the URL is checked against Google Safe Browsing before blocking. If SUSPICIOUS and Google also flags it, the verdict is escalated to MALICIOUS (two independent signals).
-- **Periodic monitoring**: A background loop checks your gateway domain + recent malicious/suspicious URLs against Google every `SAFE_BROWSING_CHECK_INTERVAL` seconds. If your gateway domain is flagged, a warning banner appears on the admin dashboard.
-- **Fail-open**: API errors never affect scanning or blocking. If Google is unreachable, verdicts proceed unchanged.
+### Fail-Open Design
+
+All Safe Browsing checks (both domain and URL-level) are fail-open. API errors never affect scanning or blocking. If Google is unreachable, verdicts proceed unchanged.
 
 ### Dashboard Integration
 
-The admin dashboard shows Safe Browsing status including domain health, API check counts, flagged URLs, and escalation counts. The review queue shows a "Google Safe Browsing" badge on items flagged by Google.
+The admin dashboard shows Safe Browsing status including domain health, threat types, API check counts, flagged URLs, and escalation counts. The review queue shows a "Google Safe Browsing" badge on items flagged by Google.
 
 ## Docker Images
 

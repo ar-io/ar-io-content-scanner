@@ -14,7 +14,7 @@ from src.gateway_client import GatewayClient
 from src.metrics import ScanMetrics
 from src.models import Verdict
 from src.rules.engine import RuleEngine
-from src.safe_browsing import SafeBrowsingClient, SafeBrowsingResult
+from src.safe_browsing import DomainStatus, SafeBrowsingClient, SafeBrowsingResult
 from src.scanner import Scanner
 
 TX1 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -148,6 +148,104 @@ class TestSafeBrowsingClient:
         client = SafeBrowsingClient(api_key="test-key")
         results = await client.check_urls([])
         assert results == []
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_check_domain_clean(self):
+        """Transparency Report returns clean status."""
+        client = SafeBrowsingClient(api_key="")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        # XSSI prefix + JSON: status_code=4 (not dangerous), no threats
+        mock_resp.text = (
+            ")]}'\n"
+            '[["sb.ssr", 4, 0, 0, 0, 0, 0, 1700000000, "example.com"]]'
+        )
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client._client, "get", new_callable=AsyncMock, return_value=mock_resp):
+            result = await client.check_domain("example.com")
+
+        assert result.flagged is False
+        assert result.domain == "example.com"
+        assert result.threat_types == []
+        assert result.status_code == 4
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_check_domain_flagged(self):
+        """Transparency Report returns flagged status with threat types."""
+        client = SafeBrowsingClient(api_key="")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        # status_code=3 (some pages unsafe), phishing=1
+        mock_resp.text = (
+            ")]}'\n"
+            '[["sb.ssr", 3, 0, 0, 1, 0, 0, 1700000000, "phishy.example.com"]]'
+        )
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client._client, "get", new_callable=AsyncMock, return_value=mock_resp):
+            result = await client.check_domain("phishy.example.com")
+
+        assert result.flagged is True
+        assert result.domain == "phishy.example.com"
+        assert "SOCIAL_ENGINEERING" in result.threat_types
+        assert result.status_code == 3
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_check_domain_multiple_threats(self):
+        """Transparency Report returns multiple threat types."""
+        client = SafeBrowsingClient(api_key="")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        # malware=1, phishing=1, unwanted=1
+        mock_resp.text = (
+            ")]}'\n"
+            '[["sb.ssr", 3, 1, 0, 1, 1, 0, 1700000000, "bad.example.com"]]'
+        )
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client._client, "get", new_callable=AsyncMock, return_value=mock_resp):
+            result = await client.check_domain("bad.example.com")
+
+        assert result.flagged is True
+        assert "MALWARE" in result.threat_types
+        assert "SOCIAL_ENGINEERING" in result.threat_types
+        assert "UNWANTED_SOFTWARE" in result.threat_types
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_check_domain_error_fails_open(self):
+        """Transparency Report errors fail open — return unflagged."""
+        client = SafeBrowsingClient(api_key="")
+
+        with patch.object(client._client, "get", new_callable=AsyncMock, side_effect=Exception("network error")):
+            result = await client.check_domain("example.com")
+
+        assert result.flagged is False
+        assert result.domain == "example.com"
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_check_domain_works_without_api_key(self):
+        """Domain check uses Transparency Report, not Lookup API — no key needed."""
+        client = SafeBrowsingClient(api_key="")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = (
+            ")]}'\n"
+            '[["sb.ssr", 3, 0, 0, 1, 0, 0, 1700000000, "flagged.example.com"]]'
+        )
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(client._client, "get", new_callable=AsyncMock, return_value=mock_resp) as mock_get:
+            result = await client.check_domain("flagged.example.com")
+
+        assert result.flagged is True
+        # Verify it used GET (Transparency Report), not POST (Lookup API)
+        mock_get.assert_called_once()
         await client.close()
 
 
@@ -485,15 +583,24 @@ class TestSafeBrowsingMetrics:
 
     def test_domain_flagged(self, metrics):
         assert metrics.safe_browsing_domain_flagged is False
-        metrics.set_safe_browsing_domain_flagged(True)
+        metrics.set_safe_browsing_domain_flagged(True, threat_types=["SOCIAL_ENGINEERING"])
         assert metrics.safe_browsing_domain_flagged is True
+        assert metrics.safe_browsing_domain_threats == ["SOCIAL_ENGINEERING"]
+
+    def test_domain_unflagged_clears_threats(self, metrics):
+        metrics.set_safe_browsing_domain_flagged(True, threat_types=["MALWARE"])
+        metrics.set_safe_browsing_domain_flagged(False)
+        assert metrics.safe_browsing_domain_flagged is False
+        assert metrics.safe_browsing_domain_threats == []
 
     def test_to_dict_includes_sb(self, metrics):
         metrics.record_safe_browsing_check(flagged=True)
+        metrics.set_safe_browsing_domain_flagged(True, threat_types=["MALWARE"])
         data = metrics.to_dict()
         assert data["safe_browsing_checks"] == 1
         assert data["safe_browsing_flagged"] == 1
-        assert data["safe_browsing_domain_flagged"] is False
+        assert data["safe_browsing_domain_flagged"] is True
+        assert data["safe_browsing_domain_threats"] == ["MALWARE"]
 
     def test_prometheus_includes_sb(self, metrics):
         metrics.record_safe_browsing_check(flagged=True)
@@ -548,7 +655,9 @@ class TestSafeBrowsingAdminAPI:
         data = resp.json()
         assert "safe_browsing" in data
         assert data["safe_browsing"]["enabled"] is True
+        assert data["safe_browsing"]["api_key_set"] is True
         assert "domain_flagged" in data["safe_browsing"]
+        assert "domain_threats" in data["safe_browsing"]
         assert "stats" in data["safe_browsing"]
 
     def test_review_detail_includes_sb_status(self, client, db):
@@ -581,6 +690,73 @@ class TestSafeBrowsingAdminAPI:
         assert data["safe_browsing"]["enabled"] is True
         assert data["safe_browsing"]["api_key_set"] is True
         assert data["safe_browsing"]["check_interval"] == 300
+
+
+class TestSafeBrowsingNoApiKey:
+    """Tests verifying Safe Browsing works without an API key (domain monitoring only)."""
+
+    @pytest.fixture
+    def settings(self, tmp_path):
+        return Settings(
+            gateway_url="http://localhost:4000",
+            admin_api_key="gateway-key",
+            scanner_admin_key="test-admin-key",
+            admin_ui_enabled=True,
+            ml_model_enabled=False,
+            db_path=str(tmp_path / "test.db"),
+            # No safe_browsing_api_key — domain monitoring should still work
+            gateway_public_url="https://mygateway.example.com",
+        )
+
+    @pytest.fixture
+    def db(self, settings):
+        _db = ScannerDB(settings.db_path)
+        _db.initialize()
+        return _db
+
+    @pytest.fixture
+    def app(self, settings, db):
+        from src.server import build_app
+
+        a = build_app(settings)
+        a.state.db = db
+        return a
+
+    @pytest.fixture
+    def client(self, app):
+        from fastapi.testclient import TestClient
+
+        return TestClient(app)
+
+    def test_stats_sb_enabled_without_key(self, client, db):
+        """Safe Browsing shows enabled even without API key."""
+        resp = client.get(
+            "/api/admin/stats",
+            headers={"Authorization": "Bearer test-admin-key"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["safe_browsing"]["enabled"] is True
+        assert data["safe_browsing"]["api_key_set"] is False
+
+    def test_settings_sb_enabled_without_key(self, client, db):
+        """Settings shows Safe Browsing enabled without API key."""
+        resp = client.get(
+            "/api/admin/settings",
+            headers={"Authorization": "Bearer test-admin-key"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["safe_browsing"]["enabled"] is True
+        assert data["safe_browsing"]["api_key_set"] is False
+
+    @pytest.mark.asyncio
+    async def test_url_check_skipped_without_key(self):
+        """URL-level Lookup API checks are skipped without an API key."""
+        client = SafeBrowsingClient(api_key="")
+        result = await client.check_url("https://example.com/page")
+        assert result.flagged is False
+        await client.close()
 
 
 class TestSafeBrowsingConfig:

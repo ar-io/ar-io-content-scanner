@@ -35,6 +35,7 @@ class ScanMetrics:
         self.safe_browsing_escalations = 0
         self.safe_browsing_errors = 0
         self.safe_browsing_domain_flagged = False
+        self.safe_browsing_domain_threats: list[str] = []
         # Backfill metrics
         self.backfill_files_scanned = 0
         self.backfill_malicious_found = 0
@@ -104,9 +105,12 @@ class ScanMetrics:
         with self._lock:
             self.safe_browsing_errors += 1
 
-    def set_safe_browsing_domain_flagged(self, flagged: bool) -> None:
+    def set_safe_browsing_domain_flagged(
+        self, flagged: bool, threat_types: list[str] | None = None,
+    ) -> None:
         with self._lock:
             self.safe_browsing_domain_flagged = flagged
+            self.safe_browsing_domain_threats = threat_types or []
 
     def record_backfill_sweep(self, stats: dict) -> None:
         with self._lock:
@@ -149,6 +153,7 @@ class ScanMetrics:
                 "safe_browsing_escalations": self.safe_browsing_escalations,
                 "safe_browsing_errors": self.safe_browsing_errors,
                 "safe_browsing_domain_flagged": self.safe_browsing_domain_flagged,
+                "safe_browsing_domain_threats": list(self.safe_browsing_domain_threats),
             }
 
     # --- Persistence: survive container restarts ---

@@ -26,8 +26,14 @@
     <div>
       <!-- Safe Browsing domain warning -->
       <template x-if="stats.safe_browsing && stats.safe_browsing.enabled && stats.safe_browsing.domain_flagged">
-        <div style="background: var(--color-red); color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 12px; font-weight: 600; font-size: 0.9rem;">
-          WARNING: Your gateway domain is flagged by Google Safe Browsing. Users may see browser warnings. Review and block flagged content immediately.
+        <div style="background: var(--color-red); color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;">
+          <div style="font-weight: 600; margin-bottom: 4px;">WARNING: Your gateway domain is flagged by Google Safe Browsing</div>
+          <div style="font-size: 0.8rem; opacity: 0.9;">
+            Users may see browser warnings. Review and block flagged content immediately.
+            <template x-if="stats.safe_browsing.domain_threats && stats.safe_browsing.domain_threats.length">
+              <span> Threats: <span x-text="stats.safe_browsing.domain_threats.join(', ')"></span></span>
+            </template>
+          </div>
         </div>
       </template>
 
