@@ -8,6 +8,7 @@ Signals (both required):
 
 Real wallet UIs render as browser extension popups, not in-page HTML forms.
 """
+from __future__ import annotations
 
 import re
 import unicodedata
@@ -16,6 +17,7 @@ from bs4 import BeautifulSoup
 
 from src.models import RuleResult
 from src.rules.base import Rule
+from src.rules.utils import has_password_like_input as _has_password_like_input_full
 
 WALLET_BRANDS = [
     "metamask",
@@ -46,13 +48,6 @@ KEY_PHRASES = [
     "recovery phrase",
     "seed phrase",
 ]
-
-# Attribute names/values that indicate a password-like purpose
-_PASSWORD_ATTR_RE = re.compile(
-    r"pass(?:word)?|pwd|passwd|secret.?key|private.?key",
-    re.IGNORECASE,
-)
-
 
 # Common Cyrillic/Greek/other homoglyphs that look identical to Latin chars.
 # These are the characters most abused in brand impersonation.
@@ -107,24 +102,8 @@ def _normalize_text(text: str) -> str:
 
 def _has_password_like_input(soup: BeautifulSoup) -> bool:
     """Detect password inputs including proxy elements."""
-    if soup.find("input", attrs={"type": "password"}):
-        return True
-
-    for ta in soup.find_all("textarea"):
-        attrs_text = " ".join(
-            str(ta.get(a, "")) for a in ("name", "id", "placeholder", "class")
-        )
-        if _PASSWORD_ATTR_RE.search(attrs_text):
-            return True
-
-    for el in soup.find_all(attrs={"contenteditable": "true"}):
-        attrs_text = " ".join(
-            str(el.get(a, "")) for a in ("id", "class", "data-placeholder", "aria-label")
-        )
-        if _PASSWORD_ATTR_RE.search(attrs_text):
-            return True
-
-    return False
+    found, _ = _has_password_like_input_full(soup)
+    return found
 
 
 class WalletImpersonationRule(Rule):

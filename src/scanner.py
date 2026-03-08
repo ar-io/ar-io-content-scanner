@@ -308,45 +308,54 @@ class Scanner:
             if peer_verdict is not None:
                 verdict_str = peer_verdict.get("verdict", "")
                 if self._should_accept_peer_verdict(verdict_str):
-                    verdict_enum = Verdict(verdict_str)
-                    matched_rules = peer_verdict.get("matched_rules", "[]")
-                    if isinstance(matched_rules, list):
-                        matched_rules = json.dumps(matched_rules)
-                    peer_url = peer_verdict.get("_peer_url", "peer")
-
-                    self.db.save_verdict(
-                        content_hash=content_hash,
-                        tx_id=tx_id,
-                        verdict=verdict_enum,
-                        matched_rules=matched_rules,
-                        ml_score=peer_verdict.get("ml_score"),
-                        scanner_version=f"peer:{peer_url}",
-                        source=peer_url,
-                    )
-                    self.metrics.record_feed_on_demand(hit=True)
-
-                    if (
-                        verdict_enum == Verdict.MALICIOUS
-                        and self.settings.scanner_mode == "enforce"
-                    ):
-                        try:
-                            rules = json.loads(matched_rules)
-                        except (json.JSONDecodeError, TypeError):
-                            rules = []
-                        success = await self.gateway.block_data(
-                            tx_id, content_hash, rules
+                    try:
+                        verdict_enum = Verdict(verdict_str)
+                    except ValueError:
+                        logger.warning(
+                            "peer_invalid_verdict",
+                            extra={"verdict": verdict_str, "content_hash": content_hash},
                         )
-                        self.metrics.record_block(success)
+                        self.metrics.record_feed_on_demand(hit=False)
+                        # Fall through to local scan
+                    else:
+                        matched_rules = peer_verdict.get("matched_rules", "[]")
+                        if isinstance(matched_rules, list):
+                            matched_rules = json.dumps(matched_rules)
+                        peer_url = peer_verdict.get("_peer_url", "peer")
 
-                    logger.info(
-                        "peer_verdict_used",
-                        extra={
-                            "tx_id": tx_id,
-                            "peer": peer_url,
-                            "verdict": verdict_str,
-                        },
-                    )
-                    return
+                        self.db.save_verdict(
+                            content_hash=content_hash,
+                            tx_id=tx_id,
+                            verdict=verdict_enum,
+                            matched_rules=matched_rules,
+                            ml_score=peer_verdict.get("ml_score"),
+                            scanner_version=f"peer:{peer_url}",
+                            source=peer_url,
+                        )
+                        self.metrics.record_feed_on_demand(hit=True)
+
+                        if (
+                            verdict_enum == Verdict.MALICIOUS
+                            and self.settings.scanner_mode == "enforce"
+                        ):
+                            try:
+                                rules = json.loads(matched_rules)
+                            except (json.JSONDecodeError, TypeError):
+                                rules = []
+                            success = await self.gateway.block_data(
+                                tx_id, content_hash, rules
+                            )
+                            self.metrics.record_block(success)
+
+                        logger.info(
+                            "peer_verdict_used",
+                            extra={
+                                "tx_id": tx_id,
+                                "peer": peer_url,
+                                "verdict": verdict_str,
+                            },
+                        )
+                        return
             self.metrics.record_feed_on_demand(hit=False)
 
         # Fetch content from gateway

@@ -111,7 +111,13 @@ class ScreenshotService:
 
             # Block all requests outside the gateway origin
             async def route_handler(route):
-                if route.request.url.startswith(allowed_origin):
+                parsed_req = urlparse(route.request.url)
+                parsed_allow = urlparse(allowed_origin)
+                if (
+                    parsed_req.scheme == parsed_allow.scheme
+                    and parsed_req.hostname == parsed_allow.hostname
+                    and (parsed_req.port or None) == (parsed_allow.port or None)
+                ):
                     await route.continue_()
                 else:
                     await route.abort()

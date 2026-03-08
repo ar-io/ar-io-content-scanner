@@ -7,6 +7,7 @@ Signals (both required):
 
 No legitimate wallet asks users to type seed phrases into a web page.
 """
+from __future__ import annotations
 
 import re
 

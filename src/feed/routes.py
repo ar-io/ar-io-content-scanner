@@ -28,11 +28,13 @@ def _check_rate_limit(client_ip: str) -> None:
     if len(active) >= _RATE_LIMIT:
         _request_log[client_ip] = active
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
-    active.append(now)
     if active:
+        active.append(now)
         _request_log[client_ip] = active
     else:
+        # No recent requests from this IP — clean up the entry and start fresh
         _request_log.pop(client_ip, None)
+        _request_log[client_ip] = [now]
 
 
 def build_feed_router(app_state) -> APIRouter:

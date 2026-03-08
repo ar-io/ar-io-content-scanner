@@ -173,6 +173,7 @@ function mlScoreDescription(score) {
 
 async function downloadCsv(path, filename) {
   var resp = await api(path);
+  if (!resp.ok) throw new Error('Export failed (HTTP ' + resp.status + ')');
   var blob = await resp.blob();
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -206,23 +207,24 @@ class ScannerDB:
             return False
 
     def dequeue(self, batch_size: int = 1) -> list[QueueRow]:
-        # Atomic: UPDATE with subquery selects and marks rows in one
-        # statement, preventing TOCTOU races across connections.
+        # Use a unique tag per dequeue call so concurrent callers cannot
+        # pick up each other's rows in the follow-up SELECT.
+        tag = f"processing:{os.urandom(4).hex()}"
         cursor = self.conn.execute(
-            "UPDATE scan_queue SET status = 'processing' "
+            "UPDATE scan_queue SET status = ? "
             "WHERE id IN ("
             "  SELECT id FROM scan_queue WHERE status = 'pending' "
             "  ORDER BY received_at LIMIT ?"
             ")",
-            (batch_size,),
+            (tag, batch_size),
         )
         if cursor.rowcount == 0:
             return []
         rows = self.conn.execute(
             "SELECT id, tx_id, content_hash, content_type, data_size, received_at "
-            "FROM scan_queue WHERE status = 'processing' "
+            "FROM scan_queue WHERE status = ? "
             "ORDER BY received_at LIMIT ?",
-            (batch_size,),
+            (tag, batch_size),
         ).fetchall()
         self.conn.commit()
         return [
@@ -251,7 +253,7 @@ class ScannerDB:
 
     def reset_processing(self) -> int:
         cursor = self.conn.execute(
-            "UPDATE scan_queue SET status = 'pending' WHERE status = 'processing'"
+            "UPDATE scan_queue SET status = 'pending' WHERE status LIKE 'processing%'"
         )
         self.conn.commit()
         return cursor.rowcount
@@ -550,6 +552,17 @@ class ScannerDB:
         )
         self.conn.commit()
 
+    def save_states_batch(self, states: dict[str, str]) -> None:
+        """Save multiple key-value pairs in a single transaction."""
+        now = int(time.time())
+        for key, value in states.items():
+            self.conn.execute(
+                "INSERT OR REPLACE INTO scanner_state (key, value, updated_at) "
+                "VALUES (?, ?, ?)",
+                (key, value, now),
+            )
+        self.conn.commit()
+
     def get_state(self, key: str, default: str = "0") -> str:
         row = self.conn.execute(
             "SELECT value FROM scanner_state WHERE key = ?", (key,)
@@ -598,8 +611,6 @@ class ScannerDB:
 
         total_verdicts = sum(verdicts_by_type.values())
         total_overrides = sum(overrides_by_type.values())
-
-        import os
 
         db_size = 0
         try:

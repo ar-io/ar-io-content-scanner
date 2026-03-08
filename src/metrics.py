@@ -158,44 +158,32 @@ class ScanMetrics:
 
     # --- Persistence: survive container restarts ---
 
-    _PERSIST_KEYS = (
-        "scans_total", "scans_skipped_not_html",
-        "cache_hits", "cache_misses",
-        "blocks_sent", "blocks_failed",
-        "_total_scan_ms", "last_webhook_at",
-        "feed_verdicts_imported", "feed_verdicts_exported",
-        "feed_poll_errors", "feed_on_demand_hits", "feed_on_demand_misses",
-        "safe_browsing_checks", "safe_browsing_flagged",
-        "safe_browsing_escalations", "safe_browsing_errors",
-        "safe_browsing_domain_flagged",
-        "scans_by_verdict_clean", "scans_by_verdict_suspicious",
-        "scans_by_verdict_malicious",
-    )
-
     def persist_to_db(self, db) -> None:
         """Save all cumulative counters to scanner_state table."""
         with self._lock:
-            db.save_state("m_scans_total", str(self.scans_total))
-            db.save_state("m_scans_skipped", str(self.scans_skipped_not_html))
-            db.save_state("m_cache_hits", str(self.cache_hits))
-            db.save_state("m_cache_misses", str(self.cache_misses))
-            db.save_state("m_blocks_sent", str(self.blocks_sent))
-            db.save_state("m_blocks_failed", str(self.blocks_failed))
-            db.save_state("m_total_scan_ms", str(self._total_scan_ms))
-            db.save_state("m_last_webhook_at", str(int(self.last_webhook_at)))
-            db.save_state("m_feed_imported", str(self.feed_verdicts_imported))
-            db.save_state("m_feed_exported", str(self.feed_verdicts_exported))
-            db.save_state("m_feed_poll_errors", str(self.feed_poll_errors))
-            db.save_state("m_feed_od_hits", str(self.feed_on_demand_hits))
-            db.save_state("m_feed_od_misses", str(self.feed_on_demand_misses))
-            db.save_state("m_sb_checks", str(self.safe_browsing_checks))
-            db.save_state("m_sb_flagged", str(self.safe_browsing_flagged))
-            db.save_state("m_sb_escalations", str(self.safe_browsing_escalations))
-            db.save_state("m_sb_errors", str(self.safe_browsing_errors))
-            db.save_state("m_sb_domain_flagged", "1" if self.safe_browsing_domain_flagged else "0")
-            db.save_state("m_v_clean", str(self.scans_by_verdict.get("clean", 0)))
-            db.save_state("m_v_suspicious", str(self.scans_by_verdict.get("suspicious", 0)))
-            db.save_state("m_v_malicious", str(self.scans_by_verdict.get("malicious", 0)))
+            db.save_states_batch({
+                "m_scans_total": str(self.scans_total),
+                "m_scans_skipped": str(self.scans_skipped_not_html),
+                "m_cache_hits": str(self.cache_hits),
+                "m_cache_misses": str(self.cache_misses),
+                "m_blocks_sent": str(self.blocks_sent),
+                "m_blocks_failed": str(self.blocks_failed),
+                "m_total_scan_ms": str(self._total_scan_ms),
+                "m_last_webhook_at": str(int(self.last_webhook_at)),
+                "m_feed_imported": str(self.feed_verdicts_imported),
+                "m_feed_exported": str(self.feed_verdicts_exported),
+                "m_feed_poll_errors": str(self.feed_poll_errors),
+                "m_feed_od_hits": str(self.feed_on_demand_hits),
+                "m_feed_od_misses": str(self.feed_on_demand_misses),
+                "m_sb_checks": str(self.safe_browsing_checks),
+                "m_sb_flagged": str(self.safe_browsing_flagged),
+                "m_sb_escalations": str(self.safe_browsing_escalations),
+                "m_sb_errors": str(self.safe_browsing_errors),
+                "m_sb_domain_flagged": "1" if self.safe_browsing_domain_flagged else "0",
+                "m_v_clean": str(self.scans_by_verdict.get("clean", 0)),
+                "m_v_suspicious": str(self.scans_by_verdict.get("suspicious", 0)),
+                "m_v_malicious": str(self.scans_by_verdict.get("malicious", 0)),
+            })
 
     def load_from_db(self, db) -> None:
         """Restore cumulative counters from scanner_state table."""

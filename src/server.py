@@ -103,7 +103,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     pool = WorkerPool(
         scanner, db, concurrency=settings.scanner_workers,
         backfill=backfill, feed_poller=feed_poller,
-        safe_browsing=safe_browsing, settings=settings, metrics=metrics,
+        safe_browsing=safe_browsing, gateway=gateway,
+        settings=settings, metrics=metrics,
     )
 
     @asynccontextmanager

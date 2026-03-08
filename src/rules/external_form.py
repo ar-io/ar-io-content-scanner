@@ -29,6 +29,7 @@ from bs4 import BeautifulSoup
 
 from src.models import RuleResult
 from src.rules.base import Rule
+from src.rules.utils import has_password_like_input
 
 # Strong exfil patterns: explicitly data-sending functions that are
 # highly suspicious on static Arweave pages.  Includes bracket-notation
@@ -55,40 +56,6 @@ CREDENTIAL_ACCESS_PATTERNS = [
 
 EXTERNAL_URL_PATTERN = r"(?:https?|wss?)://[^\s\"'`)>]{1,2048}"
 
-# Attribute names/values that indicate a password-like purpose
-_PASSWORD_ATTR_TERMS = re.compile(
-    r"pass(?:word)?|pwd|passwd|secret.?key|private.?key",
-    re.IGNORECASE,
-)
-
-
-def _has_password_like_input(soup: BeautifulSoup) -> tuple[bool, str]:
-    """Detect password inputs including proxy elements that mimic them.
-
-    Returns (found, description) for signal reporting.
-    """
-    # Standard password input
-    if soup.find("input", attrs={"type": "password"}):
-        return True, "input[type=password]"
-
-    # Textarea with password-related naming
-    for ta in soup.find_all("textarea"):
-        attrs_text = " ".join(
-            str(ta.get(a, "")) for a in ("name", "id", "placeholder", "class")
-        )
-        if _PASSWORD_ATTR_TERMS.search(attrs_text):
-            return True, "textarea[password-named]"
-
-    # Contenteditable element with password-related naming
-    for el in soup.find_all(attrs={"contenteditable": "true"}):
-        attrs_text = " ".join(
-            str(el.get(a, "")) for a in ("id", "class", "data-placeholder", "aria-label")
-        )
-        if _PASSWORD_ATTR_TERMS.search(attrs_text):
-            return True, "contenteditable[password-named]"
-
-    return False, ""
-
 
 class ExternalFormRule(Rule):
     @property
@@ -97,7 +64,7 @@ class ExternalFormRule(Rule):
 
     def evaluate(self, html: str, soup: BeautifulSoup) -> RuleResult:
         # Signal A: password-like input anywhere on the page
-        has_password, password_kind = _has_password_like_input(soup)
+        has_password, password_kind = has_password_like_input(soup)
         signal_a = has_password
 
         # Signal B path 1: form action is an absolute URL

@@ -21,11 +21,10 @@ document.addEventListener('alpine:init', function () {
         this._tickInterval = setInterval(function () {
           self._tickCount++;
         }, 1000);
-      },
-
-      destroy() {
-        if (this._interval) clearInterval(this._interval);
-        if (this._tickInterval) clearInterval(this._tickInterval);
+        this.$cleanup(function () {
+          clearInterval(self._interval);
+          clearInterval(self._tickInterval);
+        });
       },
 
       async load() {

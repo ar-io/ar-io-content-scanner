@@ -7,7 +7,9 @@ from src.backfill import BackfillScanner
 from src.config import Settings
 from src.db import ScannerDB
 from src.feed.poller import FeedPoller
+from src.gateway_client import GatewayClient
 from src.metrics import ScanMetrics
+from src.models import Verdict
 from src.safe_browsing import SafeBrowsingClient
 from src.scanner import Scanner
 
@@ -23,6 +25,7 @@ class WorkerPool:
         backfill: BackfillScanner | None = None,
         feed_poller: FeedPoller | None = None,
         safe_browsing: SafeBrowsingClient | None = None,
+        gateway: GatewayClient | None = None,
         settings: Settings | None = None,
         metrics: ScanMetrics | None = None,
     ):
@@ -32,6 +35,7 @@ class WorkerPool:
         self.backfill = backfill
         self.feed_poller = feed_poller
         self.safe_browsing = safe_browsing
+        self.gateway = gateway
         self.settings = settings
         self.metrics = metrics
         self._tasks: list[asyncio.Task] = []
@@ -107,7 +111,7 @@ class WorkerPool:
             try:
                 items = self.db.dequeue(batch_size=1)
                 if not items:
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.5)
                     continue
 
                 item = items[0]
@@ -238,6 +242,36 @@ class WorkerPool:
                         self.db.update_safe_browsing_status(
                             item["content_hash"], sb_result.flagged
                         )
+                        # Escalate SUSPICIOUS→MALICIOUS when Google corroborates
+                        if (
+                            sb_result.flagged
+                            and item["verdict"] == "suspicious"
+                        ):
+                            self.db.update_verdict(
+                                item["content_hash"], Verdict.MALICIOUS
+                            )
+                            if self.metrics:
+                                self.metrics.record_safe_browsing_escalation()
+                            logger.warning(
+                                "safe_browsing_monitor_escalation",
+                                extra={
+                                    "content_hash": item["content_hash"],
+                                    "tx_id": item["tx_id"],
+                                },
+                            )
+                            # Block if in enforce mode
+                            if (
+                                self.settings
+                                and self.settings.scanner_mode == "enforce"
+                                and self.gateway
+                            ):
+                                success = await self.gateway.block_data(
+                                    item["tx_id"],
+                                    item["content_hash"],
+                                    [],
+                                )
+                                if self.metrics:
+                                    self.metrics.record_block(success)
 
                 logger.info(
                     "safe_browsing_check_complete",
