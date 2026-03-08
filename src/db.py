@@ -479,6 +479,35 @@ class ScannerDB:
         ]
         return items, total
 
+    def get_dashboard_counts(self) -> dict:
+        """Persistent counts for the dashboard stat cards."""
+        row = self.conn.execute(
+            "SELECT "
+            "  SUM(CASE WHEN verdict != 'skipped' THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN verdict = 'malicious' THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN verdict = 'suspicious' THEN 1 ELSE 0 END) "
+            "FROM scan_verdicts"
+        ).fetchone()
+        scans_total = row[0] or 0
+        malicious = row[1] or 0
+        suspicious = row[2] or 0
+
+        # Pending review = malicious/suspicious without an admin override
+        pending_row = self.conn.execute(
+            "SELECT COUNT(*) FROM scan_verdicts v "
+            "LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
+            "WHERE v.verdict IN ('malicious', 'suspicious') "
+            "AND o.content_hash IS NULL"
+        ).fetchone()
+        pending_review = pending_row[0] if pending_row else 0
+
+        return {
+            "scans_total": scans_total,
+            "malicious": malicious,
+            "suspicious": suspicious,
+            "pending_review": pending_review,
+        }
+
     def get_db_stats(self) -> dict:
         verdicts = self.conn.execute(
             "SELECT verdict, COUNT(*) FROM scan_verdicts GROUP BY verdict"

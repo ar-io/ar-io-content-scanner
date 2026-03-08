@@ -36,20 +36,20 @@
       <!-- Stats Cards -->
       <div class="grid-stats">
         <div class="stat-card">
-          <div class="stat-number" style="color: var(--color-primary);" x-text="stats.metrics.scans_total.toLocaleString()"></div>
+          <div class="stat-number" style="color: var(--color-primary);" x-text="stats.counts.scans_total.toLocaleString()"></div>
           <div class="stat-label">Total HTML Scans</div>
         </div>
         <div class="stat-card">
-          <div class="stat-number" style="color: var(--color-red);" x-text="stats.metrics.scans_by_verdict.malicious || 0"></div>
+          <div class="stat-number" style="color: var(--color-red);" x-text="stats.counts.malicious.toLocaleString()"></div>
           <div class="stat-label">Threats Detected</div>
         </div>
         <div class="stat-card clickable" @click="$dispatch('switch-tab', 'review')">
-          <div class="stat-number" style="color: var(--color-amber);" x-text="stats.metrics.scans_by_verdict.suspicious || 0"></div>
+          <div class="stat-number" style="color: var(--color-amber);" x-text="stats.counts.pending_review.toLocaleString()"></div>
           <div class="stat-label">Awaiting Review &rarr;</div>
         </div>
         <div class="stat-card">
           <div class="stat-number" style="color: var(--color-green);" x-text="stats.metrics.blocks_sent || 0"></div>
-          <div class="stat-label">Blocks Sent</div>
+          <div class="stat-label">Blocks Sent (this session)</div>
         </div>
       </div>
 

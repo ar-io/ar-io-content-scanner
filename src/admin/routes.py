@@ -47,12 +47,14 @@ def build_admin_router(app_state) -> APIRouter:
     async def stats(_key: str = Depends(auth)):
         db = _state.db
         data = _state.metrics.to_dict()
+        counts = db.get_dashboard_counts()
         data["queue_depth"] = db.queue_depth()
         return {
             "mode": settings.scanner_mode,
             "version": settings.scanner_version,
             "uptime_seconds": data["uptime_seconds"],
             "workers": settings.scanner_workers,
+            "counts": counts,
             "metrics": {
                 "scans_total": data["scans_total"],
                 "scans_by_verdict": data["scans_by_verdict"],
