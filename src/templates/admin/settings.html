@@ -30,8 +30,12 @@
           <div class="mono" style="font-size: 0.8rem; word-break: break-all;" x-text="config.gateway_url"></div>
           <div style="color: var(--color-gray);">Version</div>
           <div style="font-weight: 600;" x-text="config.version"></div>
+          <div style="color: var(--color-gray);">Port</div>
+          <div style="font-weight: 600;" x-text="config.port"></div>
           <div style="color: var(--color-gray);">Workers</div>
           <div style="font-weight: 600;" x-text="config.workers"></div>
+          <div style="color: var(--color-gray);">Log Level</div>
+          <div style="font-weight: 600;" x-text="config.log_level"></div>
           <div style="color: var(--color-gray);">ML Model</div>
           <div>
             <span class="status-dot" :class="config.ml_model_enabled ? 'enabled' : 'disabled'"></span>
@@ -41,7 +45,39 @@
           <div style="font-weight: 600;" x-text="formatScanBytes()"></div>
           <div style="color: var(--color-gray);">Scan Timeout</div>
           <div style="font-weight: 600;" x-text="formatTimeout()"></div>
+          <div style="color: var(--color-gray);">Screenshots</div>
+          <div>
+            <span class="status-dot" :class="config.screenshot && config.screenshot.available ? 'enabled' : 'disabled'"></span>
+            <span x-text="config.screenshot ? (config.screenshot.available ? 'Active' : (config.screenshot.enabled ? 'Enabled (browser unavailable)' : 'Disabled')) : 'Disabled'"></span>
+          </div>
+          <div style="color: var(--color-gray);">DB Path</div>
+          <div class="mono" style="font-size: 0.8rem; word-break: break-all;" x-text="config.db_path"></div>
         </div>
+
+        <!-- Backfill Configuration -->
+        <template x-if="config.backfill">
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-gray-light);">
+            <h4 style="font-size: 0.85rem; font-weight: 700; margin: 0 0 8px;">Backfill</h4>
+            <template x-if="!config.backfill.enabled">
+              <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Set BACKFILL_ENABLED=true in your .env to proactively scan existing cached content.</p>
+            </template>
+            <template x-if="config.backfill.enabled">
+              <div class="grid-kv">
+                <div style="color: var(--color-gray);">Data Path</div>
+                <div class="mono" style="font-size: 0.8rem; word-break: break-all;" x-text="config.backfill.data_path"></div>
+                <div style="color: var(--color-gray);">Gateway DB</div>
+                <div>
+                  <span class="status-dot" :class="config.backfill.gateway_db_path ? 'enabled' : 'disabled'"></span>
+                  <span x-text="config.backfill.gateway_db_path ? 'Configured' : 'Not set'"></span>
+                </div>
+                <div style="color: var(--color-gray);">Rate</div>
+                <div x-text="config.backfill.rate + ' files/sec'"></div>
+                <div style="color: var(--color-gray);">Interval</div>
+                <div x-text="config.backfill.interval_hours + 'h'"></div>
+              </div>
+            </template>
+          </div>
+        </template>
       </div>
 
       <!-- Rules -->
@@ -78,21 +114,60 @@
             <div class="rule-desc" style="margin-left: 14px;">Detects DOM injection combined with encoding functions (eval, atob, fromCharCode chains) and long obfuscated payloads like base64 strings.</div>
           </div>
         </div>
+      </div>
 
-        <template x-if="config.backfill">
-          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-gray-light);">
-            <h4 style="font-size: 0.85rem; font-weight: 700; margin: 0 0 8px;">Backfill Configuration</h4>
-            <template x-if="!config.backfill.enabled">
-              <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Set BACKFILL_ENABLED=true in your .env to proactively scan existing cached content.</p>
-            </template>
-            <template x-if="config.backfill.enabled">
-              <div class="grid-kv" style="max-width: 300px;">
-                <div style="color: var(--color-gray);">Rate</div>
-                <div x-text="config.backfill.rate + ' files/sec'"></div>
-                <div style="color: var(--color-gray);">Interval</div>
-                <div x-text="config.backfill.interval_hours + 'h'"></div>
-              </div>
-            </template>
+      <!-- Verdict Feed -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Verdict Feed</h3>
+        <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0 0 16px;">Share and consume verdicts with peer content scanners.</p>
+        <template x-if="!config.verdict_feed || !config.verdict_feed.enabled">
+          <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Set VERDICT_API_KEY in your .env to enable verdict sharing.</p>
+        </template>
+        <template x-if="config.verdict_feed && config.verdict_feed.enabled">
+          <div class="grid-kv">
+            <div style="color: var(--color-gray);">API Key</div>
+            <div>
+              <span class="status-dot enabled"></span>
+              <span>Set</span>
+            </div>
+            <div style="color: var(--color-gray);">Trust Mode</div>
+            <div style="font-weight: 600;" x-text="config.verdict_feed.trust_mode"></div>
+            <div style="color: var(--color-gray);">Poll Interval</div>
+            <div style="font-weight: 600;" x-text="config.verdict_feed.poll_interval + 's'"></div>
+            <div style="color: var(--color-gray);">On-Demand Lookup</div>
+            <div>
+              <span class="status-dot" :class="config.verdict_feed.on_demand ? 'enabled' : 'disabled'"></span>
+              <span x-text="config.verdict_feed.on_demand ? 'Enabled' : 'Disabled'"></span>
+            </div>
+            <div style="color: var(--color-gray);">Peer URLs</div>
+            <div>
+              <template x-if="config.verdict_feed.peer_urls.length === 0">
+                <span style="color: var(--color-gray); font-size: 0.85rem;">None configured (serving only)</span>
+              </template>
+              <template x-for="url in config.verdict_feed.peer_urls">
+                <div class="mono" style="font-size: 0.8rem; word-break: break-all;" x-text="url"></div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Safe Browsing -->
+      <div class="card">
+        <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Google Safe Browsing</h3>
+        <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0 0 16px;">Cross-reference detected threats with Google Safe Browsing API and monitor gateway domain status.</p>
+        <template x-if="!config.safe_browsing || !config.safe_browsing.enabled">
+          <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Set SAFE_BROWSING_API_KEY in your .env to enable. Requires a Google Cloud API key with Safe Browsing API enabled.</p>
+        </template>
+        <template x-if="config.safe_browsing && config.safe_browsing.enabled">
+          <div class="grid-kv">
+            <div style="color: var(--color-gray);">API Key</div>
+            <div>
+              <span class="status-dot enabled"></span>
+              <span>Set</span>
+            </div>
+            <div style="color: var(--color-gray);">Check Interval</div>
+            <div style="font-weight: 600;" x-text="config.safe_browsing.check_interval + 's'"></div>
           </div>
         </template>
       </div>

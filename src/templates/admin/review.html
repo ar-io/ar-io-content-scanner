@@ -74,13 +74,24 @@
 
         <div style="margin-bottom: 8px;">
           <span style="font-size: 0.8rem; color: var(--color-gray);">TX ID: </span>
-          <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
-          <button class="copy-btn" @click.stop="copyToClipboard(item.tx_id)" title="Copy TX ID">copy</button>
+          <template x-if="txUrl(item.tx_id)">
+            <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="item.tx_id" style="word-break: break-all; color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
+          </template>
+          <template x-if="!txUrl(item.tx_id)">
+            <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
+          </template>
+          <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+            <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
         </div>
         <div style="margin-bottom: 12px;">
           <span style="font-size: 0.75rem; color: var(--color-gray);">Content Hash: </span>
           <span class="mono" style="font-size: 0.75rem; color: var(--color-gray);" x-text="item.content_hash"></span>
-          <button class="copy-btn" @click.stop="copyToClipboard(item.content_hash)" title="Copy content hash">copy</button>
+          <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.content_hash); copied = true; setTimeout(() => copied = false, 1500)" title="Copy content hash">
+            <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
         </div>
 
         <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
@@ -91,6 +102,11 @@
             </template>
             <span x-show="parseRules(item.matched_rules).length === 0" style="font-size: 0.8rem; color: var(--color-gray);">ML detection only</span>
           </div>
+          <template x-if="item.safe_browsing_flagged === true">
+            <div>
+              <span class="pill" style="background: var(--color-red); color: white;">Google Safe Browsing</span>
+            </div>
+          </template>
           <div>
             <span style="font-size: 0.8rem; color: var(--color-gray);">ML Score: </span>
             <span style="font-size: 0.85rem; font-weight: 600;" x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '\u2014'"></span>
@@ -101,6 +117,15 @@
             </template>
           </div>
         </div>
+
+        <!-- Screenshot thumbnail -->
+        <template x-if="screenshotUrls[item.content_hash]">
+          <div style="margin-bottom: 12px;">
+            <img :src="screenshotUrls[item.content_hash]" alt="Page screenshot"
+              @click="openDetail(item.content_hash)"
+              style="max-width: 100%; max-height: 180px; border-radius: 8px; border: 1px solid var(--color-gray-light); cursor: pointer; object-fit: cover; object-position: top;">
+          </div>
+        </template>
 
         <!-- Actions -->
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -205,13 +230,24 @@
             <div><span :class="badgeClass(detail.verdict)" x-text="detail.verdict"></span></div>
             <div style="color: var(--color-gray); font-weight: 600;">TX ID</div>
             <div>
-              <span class="mono" style="word-break: break-all;" x-text="detail.tx_id"></span>
-              <button class="copy-btn" @click="copyToClipboard(detail.tx_id)" title="Copy TX ID">copy</button>
+              <template x-if="txUrl(detail.tx_id)">
+                <a :href="txUrl(detail.tx_id)" target="_blank" rel="noopener" class="mono" style="word-break: break-all; color: var(--color-primary); text-decoration: none;" x-text="detail.tx_id" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
+              </template>
+              <template x-if="!txUrl(detail.tx_id)">
+                <span class="mono" style="word-break: break-all;" x-text="detail.tx_id"></span>
+              </template>
+              <button class="copy-btn" x-data="{ copied: false }" @click="copyToClipboard(detail.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+                <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
             </div>
             <div style="color: var(--color-gray); font-weight: 600;">Content Hash</div>
             <div>
               <span class="mono" style="word-break: break-all;" x-text="detail.content_hash"></span>
-              <button class="copy-btn" @click="copyToClipboard(detail.content_hash)" title="Copy content hash">copy</button>
+              <button class="copy-btn" x-data="{ copied: false }" @click="copyToClipboard(detail.content_hash); copied = true; setTimeout(() => copied = false, 1500)" title="Copy content hash">
+                <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
             </div>
             <div style="color: var(--color-gray); font-weight: 600;">Matched Rules</div>
             <div>
@@ -226,6 +262,12 @@
             <div x-text="formatTimestamp(detail.scanned_at)"></div>
             <div style="color: var(--color-gray); font-weight: 600;">Scanner Version</div>
             <div x-text="detail.scanner_version"></div>
+            <div style="color: var(--color-gray); font-weight: 600;">Safe Browsing</div>
+            <div>
+              <span x-show="detail.safe_browsing_flagged === true" style="color: var(--color-red); font-weight: 600;">Flagged by Google</span>
+              <span x-show="detail.safe_browsing_flagged === false" style="color: var(--color-green); font-weight: 600;">Not flagged</span>
+              <span x-show="detail.safe_browsing_flagged === null || detail.safe_browsing_flagged === undefined" style="color: var(--color-gray);">Not checked</span>
+            </div>
             <div style="color: var(--color-gray); font-weight: 600;">Admin Status</div>
             <div>
               <span x-show="detail.admin_override === 'confirmed_malicious'" style="color: var(--color-red); font-weight: 600;">Confirmed malicious</span>
@@ -233,6 +275,15 @@
               <span x-show="!detail.admin_override" style="color: var(--color-amber); font-weight: 600;">Pending review</span>
             </div>
           </div>
+
+          <!-- Screenshot in detail modal -->
+          <template x-if="detail.has_screenshot && detailScreenshotUrl">
+            <div style="margin-bottom: 20px;">
+              <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0 0 8px;">Screenshot</h4>
+              <img :src="detailScreenshotUrl" alt="Page screenshot"
+                style="max-width: 100%; border-radius: 8px; border: 1px solid var(--color-gray-light);">
+            </div>
+          </template>
 
           <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0 0 8px;">HTML Source Preview</h4>
           <div class="source-preview" x-text="detailSource || 'Loading preview...'"></div>

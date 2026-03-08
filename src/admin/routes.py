@@ -7,7 +7,7 @@ import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from src.admin.auth import require_admin_key
@@ -38,7 +38,10 @@ def build_admin_router(app_state) -> APIRouter:
     async def admin_page(request: Request):
         return templates.TemplateResponse(
             "admin/base.html",
-            {"request": request},
+            {
+                "request": request,
+                "gateway_public_url": settings.gateway_public_url,
+            },
         )
 
     # --- API endpoints (all require auth) ---
@@ -73,6 +76,20 @@ def build_admin_router(app_state) -> APIRouter:
                 "malicious_found": int(db.get_state("backfill_malicious_found", "0")),
                 "sweeps_completed": int(db.get_state("backfill_sweeps_completed", "0")),
                 "last_sweep_at": int(db.get_state("backfill_last_sweep_at", "0")) or None,
+            },
+            "verdict_feed": {
+                "enabled": bool(settings.verdict_api_key),
+                "peers": db.list_feed_sync_states(),
+                "import_stats": db.get_feed_import_stats(),
+            },
+            "safe_browsing": {
+                "enabled": bool(settings.safe_browsing_api_key),
+                "domain_flagged": data.get("safe_browsing_domain_flagged", False),
+                "checks": data.get("safe_browsing_checks", 0),
+                "flagged": data.get("safe_browsing_flagged", 0),
+                "escalations": data.get("safe_browsing_escalations", 0),
+                "check_interval": settings.safe_browsing_check_interval,
+                "stats": db.get_safe_browsing_stats(),
             },
             "recent_detections": db.get_recent_detections(limit=10),
         }
@@ -119,6 +136,19 @@ def build_admin_router(app_state) -> APIRouter:
             raise HTTPException(status_code=404, detail="Not found")
 
         override = db.get_override(content_hash)
+
+        has_screenshot = False
+        ss = _state.screenshot
+        if ss and ss.get_path(content_hash) is not None:
+            has_screenshot = True
+
+        # Look up Safe Browsing status
+        sb_row = db.conn.execute(
+            "SELECT safe_browsing_flagged FROM scan_verdicts WHERE content_hash = ?",
+            (content_hash,),
+        ).fetchone()
+        sb_flagged = sb_row[0] if sb_row and sb_row[0] is not None else None
+
         return {
             "content_hash": verdict.content_hash,
             "tx_id": verdict.tx_id,
@@ -130,6 +160,9 @@ def build_admin_router(app_state) -> APIRouter:
             "admin_override": override.admin_verdict if override else None,
             "admin_notes": override.notes if override else None,
             "content_preview_url": f"/api/admin/preview/{verdict.tx_id}",
+            "has_screenshot": has_screenshot,
+            "screenshot_url": f"/api/admin/screenshot/{content_hash}" if has_screenshot else None,
+            "safe_browsing_flagged": bool(sb_flagged) if sb_flagged is not None else None,
         }
 
     @router.post("/api/admin/review/{content_hash}/confirm")
@@ -168,6 +201,10 @@ def build_admin_router(app_state) -> APIRouter:
             )
             if success:
                 blocked_tx_ids.append(verdict.tx_id)
+
+        # Clean up screenshot — admin has reviewed
+        if _state.screenshot:
+            _state.screenshot.delete(content_hash)
 
         logger.info(
             "admin_confirm",
@@ -212,6 +249,10 @@ def build_admin_router(app_state) -> APIRouter:
         )
 
         db.update_verdict(content_hash, Verdict.CLEAN)
+
+        # Clean up screenshot — admin has reviewed
+        if _state.screenshot:
+            _state.screenshot.delete(content_hash)
 
         logger.info(
             "admin_dismiss",
@@ -345,6 +386,28 @@ def build_admin_router(app_state) -> APIRouter:
             },
         )
 
+    @router.get("/api/admin/screenshot/{content_hash}")
+    async def screenshot_image(
+        content_hash: str,
+        _key: str = Depends(auth),
+    ):
+        if not _HASH_PATTERN.match(content_hash):
+            raise HTTPException(status_code=400, detail="Invalid content hash")
+
+        ss = _state.screenshot
+        if not ss:
+            raise HTTPException(status_code=404, detail="Screenshots not enabled")
+
+        path = ss.get_path(content_hash)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Screenshot not found")
+
+        return FileResponse(
+            path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=300"},
+        )
+
     @router.get("/api/admin/settings")
     async def get_settings(_key: str = Depends(auth)):
         db = _state.db
@@ -352,7 +415,10 @@ def build_admin_router(app_state) -> APIRouter:
             "mode": settings.scanner_mode,
             "version": settings.scanner_version,
             "gateway_url": settings.gateway_url,
+            "port": settings.scanner_port,
             "workers": settings.scanner_workers,
+            "log_level": settings.log_level,
+            "db_path": settings.db_path,
             "ml_model_enabled": settings.ml_model_enabled,
             "max_scan_bytes": settings.max_scan_bytes,
             "scan_timeout_ms": settings.scan_timeout_ms,
@@ -365,8 +431,27 @@ def build_admin_router(app_state) -> APIRouter:
             "backfill": {
                 "enabled": settings.backfill_enabled,
                 "data_path": settings.backfill_data_path or None,
+                "gateway_db_path": settings.backfill_gateway_db_path or None,
                 "rate": settings.backfill_rate,
                 "interval_hours": settings.backfill_interval_hours,
+            },
+            "screenshot": {
+                "enabled": settings.screenshot_enabled,
+                "available": bool(_state.screenshot and _state.screenshot.available),
+                "timeout_ms": settings.screenshot_timeout_ms,
+            },
+            "verdict_feed": {
+                "enabled": bool(settings.verdict_api_key),
+                "api_key_set": bool(settings.verdict_api_key),
+                "peer_urls": list(settings.verdict_feed_urls),
+                "poll_interval": settings.verdict_feed_poll_interval,
+                "trust_mode": settings.verdict_feed_trust_mode,
+                "on_demand": settings.verdict_feed_on_demand,
+            },
+            "safe_browsing": {
+                "enabled": bool(settings.safe_browsing_api_key),
+                "api_key_set": bool(settings.safe_browsing_api_key),
+                "check_interval": settings.safe_browsing_check_interval,
             },
             "db_stats": db.get_db_stats(),
         }

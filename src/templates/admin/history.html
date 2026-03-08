@@ -89,7 +89,12 @@
             <tr>
               <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
               <td>
-                <span class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id"></span>
+                <template x-if="txUrl(item.tx_id)">
+                  <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
+                </template>
+                <template x-if="!txUrl(item.tx_id)">
+                  <span class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id"></span>
+                </template>
               </td>
               <td><span :class="badgeClass(item.verdict)" x-text="item.verdict"></span></td>
               <td>

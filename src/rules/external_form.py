@@ -1,11 +1,14 @@
 """Rule 2: Credential Exfiltration via External Communication
 
 Signals (both required):
-  A. Password input on the page
+  A. Password-like input on the page — either a real <input type=password>,
+     or password-like proxy elements (contenteditable, textarea with
+     password-related naming)
   B. External data transmission — either:
      - Form action is an absolute URL (http/https), OR
      - Scripts contain strong JS exfiltration patterns ($.ajax, $.post,
-       XMLHttpRequest) alongside an external URL, OR
+       XMLHttpRequest, sendBeacon, WebSocket, Image exfil) alongside
+       an external URL, OR
      - Scripts use fetch() with credential-accessing code (.value,
        FormData) alongside an external URL
 
@@ -27,22 +30,64 @@ from bs4 import BeautifulSoup
 from src.models import RuleResult
 from src.rules.base import Rule
 
-# Strong exfil patterns: these are explicitly data-sending functions
-# that are highly suspicious on static Arweave pages
+# Strong exfil patterns: explicitly data-sending functions that are
+# highly suspicious on static Arweave pages.  Includes bracket-notation
+# variants (e.g. $["ajax"]) and fire-and-forget APIs.
 STRONG_EXFIL_PATTERNS = [
-    r"\$\s*\.\s*ajax\s*\(",
-    r"\$\s*\.\s*post\s*\(",
-    r"\bXMLHttpRequest\b",
+    r"\$\s*\.\s*ajax\s*\(",                 # $.ajax(
+    r"\$\s*\[\s*[\"']ajax[\"']\s*\]",       # $["ajax"] / $['ajax']
+    r"\$\s*\.\s*post\s*\(",                 # $.post(
+    r"\$\s*\[\s*[\"']post[\"']\s*\]",       # $["post"] / $['post']
+    r"\bXMLHttpRequest\b",                   # new XMLHttpRequest
+    r"""\[\s*[\"']XMLHttpRequest[\"']\s*\]""",  # window["XMLHttpRequest"]
+    r"\bnavigator\s*\.\s*sendBeacon\s*\(",   # navigator.sendBeacon(
+    r"\bnew\s+WebSocket\s*\(",               # new WebSocket(
+    r"\bnew\s+Image\s*\(\s*\)\s*\.\s*src\s*=",  # new Image().src =
 ]
 
 # Patterns that indicate script code is reading credential input values
 # (used to corroborate fetch() as credential exfiltration)
 CREDENTIAL_ACCESS_PATTERNS = [
-    r"\.value\b",        # reading input.value
-    r"\bFormData\b",     # packaging form data
+    r"\.value\b",           # reading input.value
+    r"\[[\"']value[\"']\]", # input["value"] / input['value']
+    r"\bFormData\b",        # packaging form data
 ]
 
-EXTERNAL_URL_PATTERN = r"https?://[^\s\"'`)>]{1,2048}"
+EXTERNAL_URL_PATTERN = r"(?:https?|wss?)://[^\s\"'`)>]{1,2048}"
+
+# Attribute names/values that indicate a password-like purpose
+_PASSWORD_ATTR_TERMS = re.compile(
+    r"pass(?:word)?|pwd|passwd|secret.?key|private.?key",
+    re.IGNORECASE,
+)
+
+
+def _has_password_like_input(soup: BeautifulSoup) -> tuple[bool, str]:
+    """Detect password inputs including proxy elements that mimic them.
+
+    Returns (found, description) for signal reporting.
+    """
+    # Standard password input
+    if soup.find("input", attrs={"type": "password"}):
+        return True, "input[type=password]"
+
+    # Textarea with password-related naming
+    for ta in soup.find_all("textarea"):
+        attrs_text = " ".join(
+            str(ta.get(a, "")) for a in ("name", "id", "placeholder", "class")
+        )
+        if _PASSWORD_ATTR_TERMS.search(attrs_text):
+            return True, "textarea[password-named]"
+
+    # Contenteditable element with password-related naming
+    for el in soup.find_all(attrs={"contenteditable": "true"}):
+        attrs_text = " ".join(
+            str(el.get(a, "")) for a in ("id", "class", "data-placeholder", "aria-label")
+        )
+        if _PASSWORD_ATTR_TERMS.search(attrs_text):
+            return True, "contenteditable[password-named]"
+
+    return False, ""
 
 
 class ExternalFormRule(Rule):
@@ -51,17 +96,15 @@ class ExternalFormRule(Rule):
         return "external-credential-form"
 
     def evaluate(self, html: str, soup: BeautifulSoup) -> RuleResult:
-        # Signal A: password input anywhere on the page
-        has_password = bool(
-            soup.find("input", attrs={"type": "password"})
-        )
+        # Signal A: password-like input anywhere on the page
+        has_password, password_kind = _has_password_like_input(soup)
         signal_a = has_password
 
         # Signal B path 1: form action is an absolute URL
         external_actions = []
         for form in soup.find_all("form"):
             action = form.get("action", "")
-            if action.startswith(("http://", "https://")):
+            if action.startswith(("http://", "https://", "//")):
                 external_actions.append(action)
 
         # Signal B path 2: JS exfiltration patterns in scripts
@@ -74,7 +117,7 @@ class ExternalFormRule(Rule):
                 s.get_text() for s in soup.find_all("script")
             )
             if all_script_text.strip():
-                # Check strong exfil patterns ($.ajax, $.post, XHR)
+                # Check strong exfil patterns
                 for pattern in STRONG_EXFIL_PATTERNS:
                     if re.search(pattern, all_script_text):
                         strong_exfil_found.append(pattern)
@@ -109,6 +152,7 @@ class ExternalFormRule(Rule):
             triggered=signal_a and signal_b,
             signals={
                 "has_password_input": has_password,
+                "password_input_kind": password_kind,
                 "external_form_actions": external_actions,
                 "strong_exfil_patterns": strong_exfil_found,
                 "fetch_with_creds": fetch_with_creds,

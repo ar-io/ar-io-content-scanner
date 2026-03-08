@@ -19,6 +19,7 @@ class CachedVerdict:
     ml_score: float | None
     scanned_at: int
     scanner_version: str
+    source: str = "local"
 
 
 @dataclass
@@ -49,7 +50,8 @@ class ScannerDB:
                 matched_rules TEXT,
                 ml_score REAL,
                 scanned_at INTEGER NOT NULL,
-                scanner_version TEXT NOT NULL
+                scanner_version TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'local'
             );
 
             CREATE TABLE IF NOT EXISTS scan_queue (
@@ -80,6 +82,19 @@ class ScannerDB:
             CREATE INDEX IF NOT EXISTS idx_verdicts_verdict
                 ON scan_verdicts(verdict, scanned_at);
 
+            CREATE INDEX IF NOT EXISTS idx_verdicts_source_scanned
+                ON scan_verdicts(source, scanned_at);
+
+            CREATE TABLE IF NOT EXISTS feed_sync_state (
+                peer_url TEXT PRIMARY KEY,
+                last_scanned_at INTEGER NOT NULL DEFAULT 0,
+                last_content_hash TEXT NOT NULL DEFAULT '',
+                last_sync_at INTEGER NOT NULL DEFAULT 0,
+                imported_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT DEFAULT '',
+                consecutive_errors INTEGER NOT NULL DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS scanner_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
@@ -88,6 +103,25 @@ class ScannerDB:
             """
         )
         self._conn.commit()
+
+        # Migrations
+        columns = {
+            row[1]
+            for row in self._conn.execute(
+                "PRAGMA table_info(scan_verdicts)"
+            ).fetchall()
+        }
+        if "source" not in columns:
+            self._conn.execute(
+                "ALTER TABLE scan_verdicts ADD COLUMN source TEXT NOT NULL DEFAULT 'local'"
+            )
+            self._conn.commit()
+        if "safe_browsing_flagged" not in columns:
+            self._conn.execute(
+                "ALTER TABLE scan_verdicts ADD COLUMN safe_browsing_flagged INTEGER"
+            )
+            self._conn.commit()
+
         logger.info("Database initialized", extra={"db_path": self.db_path})
 
     @property
@@ -105,7 +139,8 @@ class ScannerDB:
     def get_verdict(self, content_hash: str) -> CachedVerdict | None:
         row = self.conn.execute(
             "SELECT content_hash, tx_id, verdict, matched_rules, ml_score, "
-            "scanned_at, scanner_version FROM scan_verdicts WHERE content_hash = ?",
+            "scanned_at, scanner_version, source "
+            "FROM scan_verdicts WHERE content_hash = ?",
             (content_hash,),
         ).fetchone()
         if row is None:
@@ -118,6 +153,7 @@ class ScannerDB:
             ml_score=row[4],
             scanned_at=row[5],
             scanner_version=row[6],
+            source=row[7] if row[7] else "local",
         )
 
     def save_verdict(
@@ -128,11 +164,12 @@ class ScannerDB:
         matched_rules: str,
         ml_score: float | None,
         scanner_version: str,
+        source: str = "local",
     ) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO scan_verdicts "
             "(content_hash, tx_id, verdict, matched_rules, ml_score, "
-            "scanned_at, scanner_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "scanned_at, scanner_version, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 content_hash,
                 tx_id,
@@ -141,6 +178,7 @@ class ScannerDB:
                 ml_score,
                 int(time.time()),
                 scanner_version,
+                source,
             ),
         )
         self.conn.commit()
@@ -316,7 +354,7 @@ class ScannerDB:
         rows = self.conn.execute(
             "SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
             "v.ml_score, v.scanned_at, v.scanner_version, "
-            "o.admin_verdict "
+            "o.admin_verdict, v.safe_browsing_flagged "
             "FROM scan_verdicts v "
             "LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
             "WHERE v.verdict IN ('malicious', 'suspicious') "
@@ -333,6 +371,7 @@ class ScannerDB:
                 "scanned_at": r[5],
                 "scanner_version": r[6],
                 "admin_status": r[7],
+                "safe_browsing_flagged": bool(r[8]) if r[8] is not None else None,
             }
             for r in rows
         ]
@@ -387,7 +426,7 @@ class ScannerDB:
         rows = self.conn.execute(
             f"SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
             f"v.ml_score, v.scanned_at, v.scanner_version, "
-            f"o.admin_verdict, o.notes "
+            f"o.admin_verdict, o.notes, v.safe_browsing_flagged "
             f"FROM scan_verdicts v "
             f"LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
             f"WHERE {where} "
@@ -406,6 +445,7 @@ class ScannerDB:
                 "scanner_version": r[6],
                 "admin_override": r[7],
                 "admin_notes": r[8],
+                "safe_browsing_flagged": bool(r[9]) if r[9] is not None else None,
             }
             for r in rows
         ]
@@ -580,6 +620,228 @@ class ScannerDB:
             }
             for r in rows
         ]
+
+    # --- Verdict feed methods ---
+
+    def get_verdict_for_feed(self, content_hash: str) -> dict | None:
+        """Look up a single local verdict for the feed API.
+
+        Returns None if not found or if it's a non-local/skipped verdict.
+        """
+        row = self.conn.execute(
+            "SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
+            "v.ml_score, v.scanned_at, v.scanner_version, "
+            "o.admin_verdict "
+            "FROM scan_verdicts v "
+            "LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
+            "WHERE v.content_hash = ? AND v.source = 'local' "
+            "AND v.verdict != 'skipped'",
+            (content_hash,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "content_hash": row[0],
+            "tx_id": row[1],
+            "verdict": row[2],
+            "matched_rules": row[3],
+            "ml_score": row[4],
+            "scanned_at": row[5],
+            "scanner_version": row[6],
+            "admin_override": row[7],
+        }
+
+    def get_verdicts_feed(
+        self,
+        since: int = 0,
+        after_hash: str = "",
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return local verdicts for the feed API, with cursor-based pagination.
+
+        Only exports source='local' rows to prevent echo loops.
+        Uses (scanned_at, content_hash) as a stable cursor.
+        """
+        if after_hash:
+            rows = self.conn.execute(
+                "SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
+                "v.ml_score, v.scanned_at, v.scanner_version, "
+                "o.admin_verdict "
+                "FROM scan_verdicts v "
+                "LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
+                "WHERE v.source = 'local' AND v.verdict != 'skipped' "
+                "AND (v.scanned_at > ? OR (v.scanned_at = ? AND v.content_hash > ?)) "
+                "ORDER BY v.scanned_at ASC, v.content_hash ASC "
+                "LIMIT ?",
+                (since, since, after_hash, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
+                "v.ml_score, v.scanned_at, v.scanner_version, "
+                "o.admin_verdict "
+                "FROM scan_verdicts v "
+                "LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
+                "WHERE v.source = 'local' AND v.verdict != 'skipped' "
+                "AND v.scanned_at >= ? "
+                "ORDER BY v.scanned_at ASC, v.content_hash ASC "
+                "LIMIT ?",
+                (since, limit),
+            ).fetchall()
+
+        return [
+            {
+                "content_hash": r[0],
+                "tx_id": r[1],
+                "verdict": r[2],
+                "matched_rules": r[3],
+                "ml_score": r[4],
+                "scanned_at": r[5],
+                "scanner_version": r[6],
+                "admin_override": r[7],
+            }
+            for r in rows
+        ]
+
+    def get_feed_sync_state(self, peer_url: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT peer_url, last_scanned_at, last_content_hash, "
+            "last_sync_at, imported_count, last_error, consecutive_errors "
+            "FROM feed_sync_state WHERE peer_url = ?",
+            (peer_url,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "peer_url": row[0],
+            "last_scanned_at": row[1],
+            "last_content_hash": row[2],
+            "last_sync_at": row[3],
+            "imported_count": row[4],
+            "last_error": row[5],
+            "consecutive_errors": row[6],
+        }
+
+    def save_feed_sync_state(
+        self,
+        peer_url: str,
+        last_scanned_at: int,
+        last_content_hash: str,
+        imported_count_delta: int = 0,
+        error: str | None = None,
+    ) -> None:
+        now = int(time.time())
+        if error is not None:
+            self.conn.execute(
+                "INSERT INTO feed_sync_state "
+                "(peer_url, last_scanned_at, last_content_hash, last_sync_at, "
+                "imported_count, last_error, consecutive_errors) "
+                "VALUES (?, ?, ?, ?, 0, ?, 1) "
+                "ON CONFLICT(peer_url) DO UPDATE SET "
+                "last_sync_at = ?, last_error = ?, "
+                "consecutive_errors = consecutive_errors + 1",
+                (peer_url, 0, "", now, error, now, error),
+            )
+        else:
+            self.conn.execute(
+                "INSERT INTO feed_sync_state "
+                "(peer_url, last_scanned_at, last_content_hash, last_sync_at, "
+                "imported_count, last_error, consecutive_errors) "
+                "VALUES (?, ?, ?, ?, ?, '', 0) "
+                "ON CONFLICT(peer_url) DO UPDATE SET "
+                "last_scanned_at = ?, last_content_hash = ?, last_sync_at = ?, "
+                "imported_count = imported_count + ?, "
+                "last_error = '', consecutive_errors = 0",
+                (
+                    peer_url, last_scanned_at, last_content_hash, now,
+                    imported_count_delta,
+                    last_scanned_at, last_content_hash, now,
+                    imported_count_delta,
+                ),
+            )
+        self.conn.commit()
+
+    def list_feed_sync_states(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT peer_url, last_scanned_at, last_content_hash, "
+            "last_sync_at, imported_count, last_error, consecutive_errors "
+            "FROM feed_sync_state ORDER BY peer_url"
+        ).fetchall()
+        return [
+            {
+                "peer_url": r[0],
+                "last_scanned_at": r[1],
+                "last_content_hash": r[2],
+                "last_sync_at": r[3],
+                "imported_count": r[4],
+                "last_error": r[5],
+                "consecutive_errors": r[6],
+            }
+            for r in rows
+        ]
+
+    def get_feed_import_stats(self) -> dict:
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM scan_verdicts WHERE source != 'local'"
+        ).fetchone()
+        total = row[0] if row else 0
+
+        by_source = self.conn.execute(
+            "SELECT source, COUNT(*) FROM scan_verdicts "
+            "WHERE source != 'local' GROUP BY source"
+        ).fetchall()
+
+        return {
+            "total_imported": total,
+            "by_source": {r[0]: r[1] for r in by_source},
+        }
+
+    # --- Safe Browsing methods ---
+
+    def update_safe_browsing_status(
+        self, content_hash: str, flagged: bool
+    ) -> None:
+        self.conn.execute(
+            "UPDATE scan_verdicts SET safe_browsing_flagged = ? "
+            "WHERE content_hash = ?",
+            (1 if flagged else 0, content_hash),
+        )
+        self.conn.commit()
+
+    def get_recent_malicious_urls(self, limit: int = 50) -> list[dict]:
+        """Get recent MALICIOUS/SUSPICIOUS verdicts with TX IDs for SB checking."""
+        rows = self.conn.execute(
+            "SELECT content_hash, tx_id, verdict, safe_browsing_flagged "
+            "FROM scan_verdicts "
+            "WHERE verdict IN ('malicious', 'suspicious') "
+            "AND tx_id != 'backfill' "
+            "ORDER BY scanned_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "content_hash": r[0],
+                "tx_id": r[1],
+                "verdict": r[2],
+                "safe_browsing_flagged": r[3],
+            }
+            for r in rows
+        ]
+
+    def get_safe_browsing_stats(self) -> dict:
+        """Get Safe Browsing status counts."""
+        row = self.conn.execute(
+            "SELECT "
+            "  SUM(CASE WHEN safe_browsing_flagged = 1 THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN safe_browsing_flagged = 0 THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN safe_browsing_flagged IS NULL AND verdict IN ('malicious', 'suspicious') THEN 1 ELSE 0 END) "
+            "FROM scan_verdicts"
+        ).fetchone()
+        return {
+            "flagged": row[0] or 0,
+            "clean": row[1] or 0,
+            "unchecked": row[2] or 0,
+        }
 
     def close(self) -> None:
         if self._conn:

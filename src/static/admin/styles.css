@@ -189,6 +189,12 @@ body {
   gap: 16px;
   margin-bottom: 24px;
 }
+.grid-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
 .grid-kv {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -204,6 +210,9 @@ body {
 
 @media (max-width: 1024px) {
   .grid-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 900px) {
+  .grid-3col { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .grid-stats { grid-template-columns: 1fr; }
@@ -332,23 +341,22 @@ body {
 
 /* ---- Copy button ---- */
 .copy-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  opacity: 0.3;
+  opacity: 0.35;
   transition: opacity 0.15s;
   margin-left: 6px;
   vertical-align: middle;
   background: none;
   border: none;
-  padding: 2px 4px;
+  padding: 2px;
   color: var(--color-primary);
-  font-size: 0.65rem;
-  font-weight: 600;
-  font-family: inherit;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  line-height: 0;
 }
 .copy-btn:hover { opacity: 1; }
+.copy-btn svg { display: block; }
 
 /* ---- Login ---- */
 .login-container {

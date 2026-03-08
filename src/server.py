@@ -17,7 +17,9 @@ from src.metrics import ScanMetrics
 from src.ml.classifier import PhishingClassifier
 from src.models import WebhookPayload
 from src.rules.engine import RuleEngine
+from src.safe_browsing import SafeBrowsingClient
 from src.scanner import Scanner
+from src.screenshot import ScreenshotService
 from src.worker import WorkerPool
 
 logger = logging.getLogger("scanner.server")
@@ -46,11 +48,48 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             logger.exception("Failed to load ML model, continuing without it")
 
     engine = RuleEngine(settings, classifier)
-    scanner = Scanner(settings, db, gateway, engine, metrics)
+
+    screenshot = None
+    if settings.screenshot_enabled:
+        screenshot = ScreenshotService(
+            screenshot_dir=settings.screenshot_dir,
+            gateway_url=settings.gateway_url,
+            timeout_ms=settings.screenshot_timeout_ms,
+        )
+
+    # Verdict feed components
+    feed_client = None
+    feed_poller = None
+    if settings.verdict_api_key:
+        from src.feed.client import FeedClient
+
+        if settings.verdict_feed_urls:
+            feed_client = FeedClient(
+                api_key=settings.verdict_api_key,
+                timeout_ms=settings.verdict_feed_request_timeout_ms,
+            )
+
+        if feed_client and settings.verdict_feed_urls:
+            from src.feed.poller import FeedPoller
+
+            feed_poller = FeedPoller(settings, db, feed_client, gateway, metrics)
+
+    # Safe Browsing client
+    safe_browsing = None
+    if settings.safe_browsing_api_key:
+        safe_browsing = SafeBrowsingClient(
+            api_key=settings.safe_browsing_api_key,
+        )
+
+    scanner = Scanner(
+        settings, db, gateway, engine, metrics,
+        screenshot=screenshot, feed_client=feed_client,
+        safe_browsing=safe_browsing,
+    )
 
     backfill = None
     if settings.backfill_enabled:
-        backfill = BackfillScanner(settings, db, engine, gateway, metrics)
+        backfill = BackfillScanner(settings, db, engine, gateway, metrics, screenshot=screenshot)
         if (
             settings.scanner_mode == "enforce"
             and not settings.backfill_gateway_db_path
@@ -62,12 +101,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             )
 
     pool = WorkerPool(
-        scanner, db, concurrency=settings.scanner_workers, backfill=backfill
+        scanner, db, concurrency=settings.scanner_workers,
+        backfill=backfill, feed_poller=feed_poller,
+        safe_browsing=safe_browsing, settings=settings, metrics=metrics,
     )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         db.initialize()
+        if screenshot:
+            await screenshot.startup()
         await pool.start()
         logger.info(
             "Content scanner started",
@@ -81,6 +124,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "max_scan_bytes": settings.max_scan_bytes,
                 "backfill": settings.backfill_enabled,
                 "admin_ui": settings.admin_ui_enabled,
+                "screenshots": screenshot.available if screenshot else False,
+                "verdict_feed": bool(settings.verdict_api_key),
+                "verdict_feed_peers": len(settings.verdict_feed_urls),
+                "safe_browsing": bool(safe_browsing),
             },
         )
         yield
@@ -89,6 +136,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             await asyncio.wait_for(pool.stop(), timeout=10)
         except asyncio.TimeoutError:
             logger.warning("Worker pool shutdown timed out after 10s")
+        if safe_browsing:
+            await safe_browsing.close()
+        if feed_client:
+            await feed_client.close()
+        if screenshot:
+            await screenshot.shutdown()
         await gateway.close()
         db.close()
         logger.info("Content scanner stopped")
@@ -101,6 +154,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.state.db = db
     app.state.settings = settings
     app.state.gateway = gateway
+    app.state.screenshot = screenshot
+    app.state.feed_poller = feed_poller
+    app.state.safe_browsing = safe_browsing
+
+    # Mount verdict feed API if configured
+    if settings.verdict_api_key:
+        from src.feed.routes import build_feed_router
+
+        app.include_router(build_feed_router(app.state))
 
     # Mount admin UI if enabled
     if settings.admin_ui_enabled:

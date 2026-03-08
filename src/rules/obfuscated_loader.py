@@ -3,10 +3,11 @@ from __future__ import annotations
 """Rule 4: Obfuscated DOM Loader
 
 Signals (both required):
-  A. Script using DOM injection (document.write, innerHTML, eval) with
-     encoding functions (unescape, atob, decodeURIComponent, fromCharCode)
-  B. Heavy encoding indicators: long base64 strings, hex escapes, or
-     fromCharCode chains
+  A. Script using DOM injection (document.write, innerHTML, eval — including
+     bracket-notation variants) with encoding functions (unescape, atob,
+     decodeURIComponent, fromCharCode — including bracket variants)
+  B. Heavy encoding indicators: long base64 strings, hex escapes, unicode
+     escapes, or fromCharCode chains
 
 Catches phishing kits that encode their payload to evade static analysis.
 """
@@ -18,26 +19,44 @@ from bs4 import BeautifulSoup
 from src.models import RuleResult
 from src.rules.base import Rule
 
+# DOM injection patterns — dot notation and bracket notation variants
 DOM_INJECTION_PATTERNS = [
     r"document\.write\s*\(",
-    r"\.innerHTML\s*=",
-    r"eval\s*\(",
+    r"""document\s*\[\s*[\"']write[\"']\s*\]""",
+    r"\.innerHTML\s*[+]?=",
+    r"""\[\s*[\"']innerHTML[\"']\s*\]\s*[+]?=""",
+    r"\beval\s*\(",
+    r"""\[\s*[\"']eval[\"']\s*\]""",
+    r"\bFunction\s*\(",  # Function("code")() is eval equivalent
 ]
 
+# Encoding functions — dot notation and bracket notation variants
 ENCODING_FUNCTIONS = [
-    r"unescape\s*\(",
-    r"atob\s*\(",
-    r"decodeURIComponent\s*\(",
+    r"\bunescape\s*\(",
+    r"""\[\s*[\"']unescape[\"']\s*\]""",
+    r"\batob\s*\(",
+    r"""\[\s*[\"']atob[\"']\s*\]""",
+    r"\bdecodeURIComponent\s*\(",
+    r"""\[\s*[\"']decodeURIComponent[\"']\s*\]""",
     r"String\.fromCharCode",
+    r"""String\s*\[\s*[\"']fromCharCode[\"']\s*\]""",
 ]
 
 BASE64_PATTERN = r"[A-Za-z0-9+/=]{100,8192}"
+# URL-safe base64 variant (uses - and _ instead of + and /)
+BASE64_URLSAFE_PATTERN = r"[A-Za-z0-9\-_=]{100,8192}"
 HEX_ESCAPE_PATTERN = r"(?:\\x[0-9a-fA-F]{2}){10,1000}"
+# Unicode escapes: \u0048\u0065\u006C\u006C\u006F
+UNICODE_ESCAPE_PATTERN = r"(?:\\u[0-9a-fA-F]{4}){10,500}"
 # Match fromCharCode with 4+ numeric literals — real obfuscation encodes
 # strings as comma-separated integers: fromCharCode(104,116,116,112)
 # This excludes library code like jQuery which uses variable expressions:
 # fromCharCode(n >> 10 | 55296, 1023 & n | 56320)
 CHAR_CODE_CHAIN = r"String\.fromCharCode\(\s*\d+\s*(?:,\s*\d+\s*){3,}\)"
+# Bracket-notation variant of the above
+CHAR_CODE_CHAIN_BRACKET = (
+    r"""String\s*\[\s*[\"']fromCharCode[\"']\s*\]\(\s*\d+\s*(?:,\s*\d+\s*){3,}\)"""
+)
 
 
 class ObfuscatedLoaderRule(Rule):
@@ -69,12 +88,24 @@ class ObfuscatedLoaderRule(Rule):
 
         # Signal B: heavy encoding indicators
         all_scripts_text = " ".join(s.get_text() for s in scripts)
-        has_long_base64 = bool(re.search(BASE64_PATTERN, all_scripts_text))
+        has_long_base64 = bool(
+            re.search(BASE64_PATTERN, all_scripts_text)
+            or re.search(BASE64_URLSAFE_PATTERN, all_scripts_text)
+        )
         has_hex_escapes = bool(re.search(HEX_ESCAPE_PATTERN, all_scripts_text))
+        has_unicode_escapes = bool(
+            re.search(UNICODE_ESCAPE_PATTERN, all_scripts_text)
+        )
         has_charcode_chain = bool(
             re.search(CHAR_CODE_CHAIN, all_scripts_text)
+            or re.search(CHAR_CODE_CHAIN_BRACKET, all_scripts_text)
         )
-        signal_b = has_long_base64 or has_hex_escapes or has_charcode_chain
+        signal_b = (
+            has_long_base64
+            or has_hex_escapes
+            or has_unicode_escapes
+            or has_charcode_chain
+        )
 
         return RuleResult(
             rule_name=self.name,
@@ -84,6 +115,7 @@ class ObfuscatedLoaderRule(Rule):
                 "encoding_functions": encoding_found,
                 "has_long_base64": has_long_base64,
                 "has_hex_escapes": has_hex_escapes,
+                "has_unicode_escapes": has_unicode_escapes,
                 "has_charcode_chain": has_charcode_chain,
             },
         )

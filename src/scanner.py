@@ -11,9 +11,22 @@ from src.db import ScannerDB
 from src.gateway_client import GatewayClient
 from src.metrics import ScanMetrics
 from src.ml.features import parse_html
-from src.models import Verdict, WebhookPayload
+from src.models import ScanResult, Verdict, WebhookPayload
 from src.rules.engine import RuleEngine
 from src.db import QueueRow
+from src.screenshot import ScreenshotService
+
+# Optional feed client import — only used if configured
+try:
+    from src.feed.client import FeedClient
+except ImportError:
+    FeedClient = None  # type: ignore[assignment,misc]
+
+# Optional Safe Browsing import
+try:
+    from src.safe_browsing import SafeBrowsingClient
+except ImportError:
+    SafeBrowsingClient = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger("scanner.core")
 
@@ -60,12 +73,109 @@ class Scanner:
         gateway: GatewayClient,
         engine: RuleEngine,
         metrics: ScanMetrics,
+        screenshot: ScreenshotService | None = None,
+        feed_client: FeedClient | None = None,
+        safe_browsing: SafeBrowsingClient | None = None,
     ):
         self.settings = settings
         self.db = db
         self.gateway = gateway
         self.engine = engine
         self.metrics = metrics
+        self.screenshot = screenshot
+        self.feed_client = feed_client
+        self.safe_browsing = safe_browsing
+
+    async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
+        try:
+            await self.screenshot.capture(tx_id, content_hash)
+        except Exception:
+            logger.warning(
+                "screenshot_capture_failed",
+                extra={"tx_id": tx_id},
+            )
+
+    async def _check_safe_browsing(
+        self,
+        tx_id: str,
+        content_hash: str | None,
+        result: ScanResult,
+    ) -> None:
+        """Check a URL against Google Safe Browsing after scan verdict.
+
+        If SUSPICIOUS and Google flags it, escalate to MALICIOUS.
+        Updates the safe_browsing_flagged column in scan_verdicts.
+        """
+        url = f"{self.settings.gateway_public_url}/{tx_id}"
+        try:
+            sb_result = await self.safe_browsing.check_url(url)
+            self.metrics.record_safe_browsing_check(sb_result.flagged)
+
+            if content_hash:
+                self.db.update_safe_browsing_status(
+                    content_hash, sb_result.flagged
+                )
+
+            if sb_result.flagged and result.verdict == Verdict.SUSPICIOUS:
+                # Escalate: two independent signals (our rules + Google)
+                result.verdict = Verdict.MALICIOUS
+                self.metrics.record_safe_browsing_escalation()
+                if content_hash:
+                    self.db.update_verdict(content_hash, Verdict.MALICIOUS)
+                logger.warning(
+                    "safe_browsing_escalation",
+                    extra={
+                        "tx_id": tx_id,
+                        "content_hash": content_hash,
+                        "threat_types": sb_result.threat_types,
+                    },
+                )
+            elif sb_result.flagged:
+                logger.info(
+                    "safe_browsing_corroborated",
+                    extra={
+                        "tx_id": tx_id,
+                        "threat_types": sb_result.threat_types,
+                    },
+                )
+        except Exception:
+            self.metrics.record_safe_browsing_error()
+            logger.warning(
+                "safe_browsing_check_failed",
+                extra={"tx_id": tx_id},
+                exc_info=True,
+            )
+
+    def _should_accept_peer_verdict(self, verdict_str: str) -> bool:
+        """Check if a peer verdict should be accepted based on trust mode."""
+        if self.settings.verdict_feed_trust_mode == "all":
+            return verdict_str != "skipped"
+        return verdict_str == "malicious"
+
+    async def _check_peers(self, content_hash: str) -> dict | None:
+        """Query all peers concurrently for a verdict. Returns first match."""
+        async def _query(peer_url: str) -> dict | None:
+            result = await self.feed_client.lookup_verdict(peer_url, content_hash)
+            if result is not None:
+                result["_peer_url"] = peer_url
+            return result
+
+        tasks = [
+            _query(peer_url)
+            for peer_url in self.settings.verdict_feed_urls
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Prefer MALICIOUS verdicts, then any valid verdict
+        best = None
+        for r in results:
+            if isinstance(r, Exception) or r is None:
+                continue
+            if r.get("verdict") == "malicious":
+                return r
+            if best is None:
+                best = r
+        return best
 
     async def process_webhook(self, payload: WebhookPayload) -> None:
         data = payload.data
@@ -187,6 +297,58 @@ class Scanner:
                     )
                     return
 
+        # On-demand peer lookup before fetching content
+        if (
+            content_hash
+            and self.feed_client
+            and self.settings.verdict_feed_on_demand
+            and self.settings.verdict_feed_urls
+        ):
+            peer_verdict = await self._check_peers(content_hash)
+            if peer_verdict is not None:
+                verdict_str = peer_verdict.get("verdict", "")
+                if self._should_accept_peer_verdict(verdict_str):
+                    verdict_enum = Verdict(verdict_str)
+                    matched_rules = peer_verdict.get("matched_rules", "[]")
+                    if isinstance(matched_rules, list):
+                        matched_rules = json.dumps(matched_rules)
+                    peer_url = peer_verdict.get("_peer_url", "peer")
+
+                    self.db.save_verdict(
+                        content_hash=content_hash,
+                        tx_id=tx_id,
+                        verdict=verdict_enum,
+                        matched_rules=matched_rules,
+                        ml_score=peer_verdict.get("ml_score"),
+                        scanner_version=f"peer:{peer_url}",
+                        source=peer_url,
+                    )
+                    self.metrics.record_feed_on_demand(hit=True)
+
+                    if (
+                        verdict_enum == Verdict.MALICIOUS
+                        and self.settings.scanner_mode == "enforce"
+                    ):
+                        try:
+                            rules = json.loads(matched_rules)
+                        except (json.JSONDecodeError, TypeError):
+                            rules = []
+                        success = await self.gateway.block_data(
+                            tx_id, content_hash, rules
+                        )
+                        self.metrics.record_block(success)
+
+                    logger.info(
+                        "peer_verdict_used",
+                        extra={
+                            "tx_id": tx_id,
+                            "peer": peer_url,
+                            "verdict": verdict_str,
+                        },
+                    )
+                    return
+            self.metrics.record_feed_on_demand(hit=False)
+
         # Fetch content from gateway
         content = await self.gateway.fetch_content(tx_id)
         if content is None:
@@ -245,6 +407,26 @@ class Scanner:
                 )
 
         self.metrics.record_scan(result.verdict, result.scan_duration_ms)
+
+        # Safe Browsing corroboration: check flagged content against Google
+        # before blocking. Escalate SUSPICIOUS→MALICIOUS if Google agrees.
+        if (
+            result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
+            and self.safe_browsing
+            and self.settings.gateway_public_url
+        ):
+            await self._check_safe_browsing(
+                tx_id, content_hash, result
+            )
+
+        # Capture screenshot for flagged content (fire-and-forget to avoid
+        # blocking the worker — capture takes seconds for page load + render)
+        if (
+            result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
+            and content_hash
+            and self.screenshot
+        ):
+            asyncio.create_task(self._capture_screenshot(tx_id, content_hash))
 
         # Take action
         action = "passed"

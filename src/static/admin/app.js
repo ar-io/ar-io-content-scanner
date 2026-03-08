@@ -164,19 +164,44 @@ async function downloadCsv(path, filename) {
   URL.revokeObjectURL(url);
 }
 
+function txUrl(txId) {
+  if (!window.GATEWAY_PUBLIC_URL || !txId) return '';
+  // "backfill" is a placeholder, not a real TX ID
+  if (txId === 'backfill') return '';
+  return window.GATEWAY_PUBLIC_URL + '/' + txId;
+}
+
 function copyToClipboard(text) {
   if (!text) return;
-  navigator.clipboard.writeText(text).then(function() {
+
+  function onSuccess() {
     Alpine.store('toast').show('Copied to clipboard', 'info');
-  }).catch(function() {
+  }
+
+  function fallbackCopy() {
     var ta = document.createElement('textarea');
     ta.value = text;
+    // Must be visible for execCommand to work in all browsers
     ta.style.position = 'fixed';
-    ta.style.opacity = '0';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    ta.style.opacity = '0.01';
+    ta.setAttribute('readonly', '');
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    try {
+      document.execCommand('copy');
+      onSuccess();
+    } catch (e) {
+      Alpine.store('toast').show('Copy failed — try manually', 'error');
+    }
     document.body.removeChild(ta);
-    Alpine.store('toast').show('Copied to clipboard', 'info');
-  });
+  }
+
+  // Clipboard API requires secure context (HTTPS or localhost)
+  if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(fallbackCopy);
+  } else {
+    fallbackCopy();
+  }
 }

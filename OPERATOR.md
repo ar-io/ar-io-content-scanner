@@ -73,9 +73,11 @@ Access the admin dashboard at `http://localhost:3100/admin`. Log in with your `S
 The dashboard provides:
 
 - **Dashboard** — real-time stats, system health, backfill status, recent detections with 30-second auto-refresh
-- **Review Queue** — confirm or dismiss flagged content (MALICIOUS/SUSPICIOUS verdicts)
+- **Review Queue** — confirm or dismiss flagged content with screenshot previews of flagged pages
 - **Scan History** — searchable, filterable log of all scans with CSV export
 - **Settings** — current configuration, rule status, database stats, training data export
+
+Screenshots of flagged content are captured automatically using a headless browser (included in the Docker image). They appear as thumbnails in the review queue, making it easy to identify phishing pages at a glance. Screenshots are deleted when you confirm or dismiss an item.
 
 ### Admin Overrides
 
@@ -121,7 +123,12 @@ Returns:
   "blocks_failed": 0,
   "avg_scan_ms": 35.2,
   "queue_depth": 0,
-  "uptime_seconds": 86400
+  "uptime_seconds": 86400,
+  "feed_verdicts_imported": 42,
+  "feed_verdicts_exported": 156,
+  "feed_poll_errors": 0,
+  "feed_on_demand_hits": 18,
+  "feed_on_demand_misses": 95
 }
 ```
 
@@ -129,6 +136,8 @@ Key metrics to watch:
 - **blocks_failed** > 0: Content Scanner can't reach the gateway admin API. Check `ADMIN_API_KEY` and network connectivity.
 - **queue_depth** growing: Workers can't keep up. Increase `SCANNER_WORKERS`.
 - **scans_by_verdict.suspicious** > 0: ML model flagged content the rules didn't catch. Review logs for these transaction IDs.
+- **feed_poll_errors** > 0: Can't reach a peer scanner. Check network and `VERDICT_API_KEY`.
+- **feed_on_demand_hits** growing: Peer lookups are saving local scan work.
 
 ### Logs
 
@@ -185,6 +194,21 @@ Example log entry for a blocked phishing page:
 | `SCAN_TIMEOUT` | `10000` | Gateway fetch timeout in ms |
 | `DB_PATH` | `/app/data/scanner.db` | SQLite database path |
 | `ADMIN_UI_ENABLED` | `true` | Enable the admin dashboard at `/admin` |
+| `GATEWAY_PUBLIC_URL` | -- | Public gateway URL for clickable TX ID links (e.g., `https://vilenarios.com`) |
+| `SCREENSHOT_ENABLED` | `true` | Capture screenshots of flagged content for admin review |
+| `SCREENSHOT_DIR` | `/app/data/screenshots` | Directory to store screenshot files |
+| `SCREENSHOT_TIMEOUT_MS` | `15000` | Page load + capture timeout in ms |
+
+### Verdict Feed
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VERDICT_API_KEY` | *(none)* | API key for verdict feed (same key for serving and consuming) |
+| `VERDICT_FEED_URLS` | *(none)* | Comma-separated peer scanner URLs to poll |
+| `VERDICT_FEED_POLL_INTERVAL` | `300` | Seconds between polling peers |
+| `VERDICT_FEED_TRUST_MODE` | `malicious_only` | `malicious_only` or `all` |
+| `VERDICT_FEED_ON_DEMAND` | `true` | Check peers before scanning locally |
+| `VERDICT_FEED_REQUEST_TIMEOUT_MS` | `5000` | Timeout for peer API requests in ms |
 
 ### Rule Toggles
 
@@ -243,6 +267,8 @@ Content Scanner stores its SQLite database at `DB_PATH` (default: `/app/data/sca
 - **Scan queue** (`scan_queue`): Pending webhook events awaiting processing. Items older than 1 hour are automatically purged.
 - **Admin overrides** (`admin_overrides`): Operator confirm/dismiss decisions from the admin dashboard. These persist across restarts and take priority over re-scans.
 
+Screenshots of flagged content are stored at `SCREENSHOT_DIR` (default: `/app/data/screenshots`). These are JPEG files named by content hash, deleted automatically when an admin confirms or dismisses the item. If screenshots are lost, they are not recaptured — this only affects the admin review UI.
+
 The volume should be persisted across container restarts. If the database is lost, Content Scanner will rescan content as it encounters it — there is no data loss, just temporary extra work. However, **admin overrides will be lost**, so dismissed false positives may be re-flagged.
 
 ## Backfill: Scanning Existing Cached Content
@@ -294,6 +320,92 @@ docker compose logs content-scanner | grep backfill
 - Subsequent sweeps run every `BACKFILL_INTERVAL_HOURS` hours
 - The gateway's `data.db` is opened read-only — Content Scanner never writes to it
 - If `BACKFILL_GATEWAY_DB_PATH` is not set in enforce mode, malicious content is detected and logged but cannot be blocked (no TX ID available)
+
+## Verdict Feed: Sharing Detections Across Scanners
+
+The verdict feed lets multiple Content Scanner instances share detection results. When one scanner detects a phishing page, all peers can automatically block it too.
+
+### Producer Only (Serve Verdicts to Peers)
+
+If you just want to share your verdicts for others to consume, set an API key:
+
+```bash
+VERDICT_API_KEY=your-shared-secret
+```
+
+Your scanner will serve verdicts at `/api/verdicts` and `/api/verdicts/:hash`, protected by this key.
+
+### Consumer (Poll a Peer)
+
+To import verdicts from another scanner:
+
+```bash
+VERDICT_API_KEY=shared-secret-key
+VERDICT_FEED_URLS=http://scanner-a:3100
+```
+
+The API key must match the peer's `VERDICT_API_KEY`.
+
+### Fleet (Bidirectional)
+
+For a fleet of scanners that all share with each other, configure each scanner to poll the others:
+
+```bash
+# On Scanner A
+VERDICT_API_KEY=shared-secret-key
+VERDICT_FEED_URLS=http://scanner-b:3100,http://scanner-c:3100
+
+# On Scanner B
+VERDICT_API_KEY=shared-secret-key
+VERDICT_FEED_URLS=http://scanner-a:3100,http://scanner-c:3100
+```
+
+### Trust Modes
+
+| Mode | Behavior |
+|------|----------|
+| `malicious_only` (default) | Only import MALICIOUS verdicts. Safest — a peer's CLEAN verdict won't prevent local scanning. |
+| `all` | Import all verdicts including CLEAN. Best for identically-configured scanner fleets. |
+
+### On-Demand Lookup
+
+When enabled (default), Content Scanner checks all peers before scanning content locally. If a peer already has a verdict, the local scan is skipped — saving bandwidth and compute. Disable with `VERDICT_FEED_ON_DEMAND=false` if you want every scanner to independently verify content.
+
+### How It Works
+
+- **Polling**: A background loop polls each peer every `VERDICT_FEED_POLL_INTERVAL` seconds (default: 300). Multiple pages of results are fetched automatically if the peer has a backlog.
+- **Echo prevention**: Imported verdicts are never re-exported. Scanner A → Scanner B will not echo back to Scanner A.
+- **Local priority**: If content was already scanned locally, peer verdicts are ignored.
+- **Admin overrides respected**: Locally dismissed content is never reimported from peers.
+- **Blocking**: Imported MALICIOUS verdicts trigger auto-blocking in enforce mode, just like local detections.
+
+### Monitoring the Feed
+
+The admin dashboard shows feed status on both the **Dashboard** and **Settings** tabs. You can also check via CLI:
+
+```bash
+# Check feed metrics
+curl http://localhost:3100/metrics | jq '{feed_verdicts_imported, feed_verdicts_exported, feed_poll_errors, feed_on_demand_hits, feed_on_demand_misses}'
+
+# Watch feed logs
+docker compose logs content-scanner | grep feed_
+```
+
+Key metrics to watch:
+- **feed_poll_errors** > 0: Can't reach a peer. Check network connectivity and API key.
+- **feed_on_demand_hits** growing: Peers are saving you local scans.
+- **feed_verdicts_imported** growing: Background polling is importing detections.
+
+### Troubleshooting
+
+**Peers returning 401:**
+The `VERDICT_API_KEY` must be identical on all scanners in the fleet.
+
+**No verdicts being imported:**
+Check trust mode — in `malicious_only` mode (default), CLEAN verdicts from peers are ignored. This is expected behavior.
+
+**Imported verdicts not blocking:**
+Imported MALICIOUS verdicts only trigger blocks in `enforce` mode. Check `SCANNER_MODE`.
 
 ## Sidecar Downtime
 

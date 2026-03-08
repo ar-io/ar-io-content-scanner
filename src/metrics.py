@@ -23,6 +23,18 @@ class ScanMetrics:
         self._total_scan_ms = 0
         self.start_time = time.time()
         self.last_webhook_at: float = 0
+        # Feed metrics
+        self.feed_verdicts_imported = 0
+        self.feed_verdicts_exported = 0
+        self.feed_poll_errors = 0
+        self.feed_on_demand_hits = 0
+        self.feed_on_demand_misses = 0
+        # Safe Browsing metrics
+        self.safe_browsing_checks = 0
+        self.safe_browsing_flagged = 0
+        self.safe_browsing_escalations = 0
+        self.safe_browsing_errors = 0
+        self.safe_browsing_domain_flagged = False
         # Backfill metrics
         self.backfill_files_scanned = 0
         self.backfill_malicious_found = 0
@@ -59,6 +71,43 @@ class ScanMetrics:
             else:
                 self.blocks_failed += 1
 
+    def record_feed_import(self) -> None:
+        with self._lock:
+            self.feed_verdicts_imported += 1
+
+    def record_feed_export(self, count: int = 1) -> None:
+        with self._lock:
+            self.feed_verdicts_exported += count
+
+    def record_feed_poll_error(self) -> None:
+        with self._lock:
+            self.feed_poll_errors += 1
+
+    def record_feed_on_demand(self, hit: bool) -> None:
+        with self._lock:
+            if hit:
+                self.feed_on_demand_hits += 1
+            else:
+                self.feed_on_demand_misses += 1
+
+    def record_safe_browsing_check(self, flagged: bool) -> None:
+        with self._lock:
+            self.safe_browsing_checks += 1
+            if flagged:
+                self.safe_browsing_flagged += 1
+
+    def record_safe_browsing_escalation(self) -> None:
+        with self._lock:
+            self.safe_browsing_escalations += 1
+
+    def record_safe_browsing_error(self) -> None:
+        with self._lock:
+            self.safe_browsing_errors += 1
+
+    def set_safe_browsing_domain_flagged(self, flagged: bool) -> None:
+        with self._lock:
+            self.safe_browsing_domain_flagged = flagged
+
     def record_backfill_sweep(self, stats: dict) -> None:
         with self._lock:
             self.backfill_files_scanned += stats.get("scanned", 0)
@@ -90,6 +139,16 @@ class ScanMetrics:
                 "backfill_malicious_found": self.backfill_malicious_found,
                 "backfill_last_sweep_at": self.backfill_last_sweep_at,
                 "backfill_sweeps_completed": self.backfill_sweeps_completed,
+                "feed_verdicts_imported": self.feed_verdicts_imported,
+                "feed_verdicts_exported": self.feed_verdicts_exported,
+                "feed_poll_errors": self.feed_poll_errors,
+                "feed_on_demand_hits": self.feed_on_demand_hits,
+                "feed_on_demand_misses": self.feed_on_demand_misses,
+                "safe_browsing_checks": self.safe_browsing_checks,
+                "safe_browsing_flagged": self.safe_browsing_flagged,
+                "safe_browsing_escalations": self.safe_browsing_escalations,
+                "safe_browsing_errors": self.safe_browsing_errors,
+                "safe_browsing_domain_flagged": self.safe_browsing_domain_flagged,
             }
 
     def to_prometheus(self, queue_depth: int = 0) -> str:
@@ -163,6 +222,87 @@ class ScanMetrics:
             lines.append(
                 f"scanner_backfill_malicious_found "
                 f"{self.backfill_malicious_found}"
+            )
+            lines.append(
+                "# HELP scanner_feed_verdicts_imported "
+                "Verdicts imported from peers"
+            )
+            lines.append("# TYPE scanner_feed_verdicts_imported counter")
+            lines.append(
+                f"scanner_feed_verdicts_imported {self.feed_verdicts_imported}"
+            )
+            lines.append(
+                "# HELP scanner_feed_verdicts_exported "
+                "Verdicts served to peers"
+            )
+            lines.append("# TYPE scanner_feed_verdicts_exported counter")
+            lines.append(
+                f"scanner_feed_verdicts_exported {self.feed_verdicts_exported}"
+            )
+            lines.append(
+                "# HELP scanner_feed_poll_errors Feed poll error count"
+            )
+            lines.append("# TYPE scanner_feed_poll_errors counter")
+            lines.append(
+                f"scanner_feed_poll_errors {self.feed_poll_errors}"
+            )
+            lines.append(
+                "# HELP scanner_feed_on_demand_hits "
+                "On-demand peer lookups that returned a verdict"
+            )
+            lines.append("# TYPE scanner_feed_on_demand_hits counter")
+            lines.append(
+                f"scanner_feed_on_demand_hits {self.feed_on_demand_hits}"
+            )
+            lines.append(
+                "# HELP scanner_feed_on_demand_misses "
+                "On-demand peer lookups with no result"
+            )
+            lines.append("# TYPE scanner_feed_on_demand_misses counter")
+            lines.append(
+                f"scanner_feed_on_demand_misses {self.feed_on_demand_misses}"
+            )
+            lines.append(
+                "# HELP scanner_safe_browsing_checks "
+                "Total Safe Browsing API checks"
+            )
+            lines.append("# TYPE scanner_safe_browsing_checks counter")
+            lines.append(
+                f"scanner_safe_browsing_checks {self.safe_browsing_checks}"
+            )
+            lines.append(
+                "# HELP scanner_safe_browsing_flagged "
+                "URLs flagged by Safe Browsing"
+            )
+            lines.append("# TYPE scanner_safe_browsing_flagged counter")
+            lines.append(
+                f"scanner_safe_browsing_flagged {self.safe_browsing_flagged}"
+            )
+            lines.append(
+                "# HELP scanner_safe_browsing_escalations "
+                "Suspicious verdicts escalated to malicious via Safe Browsing"
+            )
+            lines.append("# TYPE scanner_safe_browsing_escalations counter")
+            lines.append(
+                f"scanner_safe_browsing_escalations "
+                f"{self.safe_browsing_escalations}"
+            )
+            lines.append(
+                "# HELP scanner_safe_browsing_errors "
+                "Safe Browsing API errors"
+            )
+            lines.append("# TYPE scanner_safe_browsing_errors counter")
+            lines.append(
+                f"scanner_safe_browsing_errors {self.safe_browsing_errors}"
+            )
+            lines.append(
+                "# HELP scanner_safe_browsing_domain_flagged "
+                "Whether the gateway domain is flagged by Safe Browsing"
+            )
+            lines.append("# TYPE scanner_safe_browsing_domain_flagged gauge")
+            lines.append(
+                f"scanner_safe_browsing_domain_flagged "
+                f"{1 if self.safe_browsing_domain_flagged else 0}"
             )
             lines.append("")
             return "\n".join(lines)

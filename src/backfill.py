@@ -26,6 +26,7 @@ from src.ml.features import parse_html
 from src.models import Verdict
 from src.rules.engine import RuleEngine
 from src.scanner import looks_like_html
+from src.screenshot import ScreenshotService
 
 logger = logging.getLogger("scanner.backfill")
 
@@ -75,12 +76,23 @@ class BackfillScanner:
         engine: RuleEngine,
         gateway: GatewayClient,
         metrics: ScanMetrics,
+        screenshot: ScreenshotService | None = None,
     ):
         self.settings = settings
         self.db = db
         self.engine = engine
         self.gateway = gateway
         self.metrics = metrics
+        self.screenshot = screenshot
+
+    async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
+        try:
+            await self.screenshot.capture(tx_id, content_hash)
+        except Exception:
+            logger.warning(
+                "screenshot_capture_failed",
+                extra={"tx_id": tx_id, "content_hash": content_hash},
+            )
 
     def _open_gateway_db(self) -> GatewayDBReader | None:
         path = self.settings.backfill_gateway_db_path
@@ -177,6 +189,10 @@ class BackfillScanner:
 
         gateway_db = self._open_gateway_db()
 
+        # Save baseline so intermediate + final writes don't double-count
+        prev_scanned = int(self.db.get_state("backfill_files_scanned", "0"))
+        prev_malicious = int(self.db.get_state("backfill_malicious_found", "0"))
+
         logger.info(
             "backfill_sweep_started",
             extra={
@@ -224,6 +240,18 @@ class BackfillScanner:
                                 "eta_seconds": eta,
                             },
                         )
+                        # Persist progress so the dashboard shows live stats
+                        try:
+                            self.db.save_state(
+                                "backfill_files_scanned",
+                                str(prev_scanned + stats["scanned"] + stats["skipped_not_html"]),
+                            )
+                            self.db.save_state(
+                                "backfill_malicious_found",
+                                str(prev_malicious + stats["malicious"]),
+                            )
+                        except Exception:
+                            pass
                     await asyncio.sleep(delay)
                 except asyncio.CancelledError:
                     raise
@@ -243,10 +271,8 @@ class BackfillScanner:
         logger.info("backfill_sweep_complete", extra=stats)
         self.metrics.record_backfill_sweep(stats)
 
-        # Persist backfill stats to DB so they survive restarts
+        # Persist final backfill stats to DB so they survive restarts
         try:
-            prev_scanned = int(self.db.get_state("backfill_files_scanned", "0"))
-            prev_malicious = int(self.db.get_state("backfill_malicious_found", "0"))
             prev_sweeps = int(self.db.get_state("backfill_sweeps_completed", "0"))
             self.db.save_state(
                 "backfill_files_scanned",
@@ -421,5 +447,13 @@ class BackfillScanner:
                 },
             )
 
-        else:
+        # Capture screenshot for flagged content (fire-and-forget)
+        if (
+            result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
+            and tx_id != "backfill"
+            and self.screenshot
+        ):
+            asyncio.create_task(self._capture_screenshot(tx_id, hash_str))
+
+        if result.verdict not in (Verdict.MALICIOUS, Verdict.SUSPICIOUS):
             stats["clean"] += 1

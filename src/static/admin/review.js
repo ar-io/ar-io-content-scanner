@@ -25,10 +25,14 @@ document.addEventListener('alpine:init', function () {
         loading: false
       },
 
+      // Screenshots
+      screenshotUrls: {},
+
       // Detail modal
       showModal: false,
       detail: null,
       detailSource: '',
+      detailScreenshotUrl: '',
       detailLoading: false,
 
       async init() {
@@ -51,6 +55,7 @@ document.addEventListener('alpine:init', function () {
           this.total = data.total;
           this.pages = data.pages;
           this.error = '';
+          this.loadScreenshots(data.items);
         } catch (e) {
           this.error = 'Failed to load review queue. ' + (e.message || '');
         }
@@ -75,6 +80,33 @@ document.addEventListener('alpine:init', function () {
           self.page = 1;
           self.load();
         }, 300);
+      },
+
+      // --- Screenshot loading ---
+      loadScreenshots(items) {
+        // Revoke old blob URLs to prevent memory leak
+        var oldUrls = this.screenshotUrls;
+        Object.keys(oldUrls).forEach(function (k) {
+          if (oldUrls[k]) URL.revokeObjectURL(oldUrls[k]);
+        });
+        this.screenshotUrls = {};
+
+        var self = this;
+        items.forEach(function (item) {
+          var hash = item.content_hash;
+          api('/api/admin/screenshot/' + hash).then(function (resp) {
+            if (resp.ok) {
+              return resp.blob().then(function (blob) {
+                // Reassign entire object to trigger Alpine reactivity
+                var updated = Object.assign({}, self.screenshotUrls);
+                updated[hash] = URL.createObjectURL(blob);
+                self.screenshotUrls = updated;
+              });
+            }
+          }).catch(function () {
+            // No screenshot available — that's fine
+          });
+        });
       },
 
       // --- Confirmation flow ---
@@ -142,11 +174,29 @@ document.addEventListener('alpine:init', function () {
         this.detailLoading = true;
         this.showModal = true;
         this.detailSource = '';
+        this.detailScreenshotUrl = '';
         try {
           this.detail = await apiJson('/api/admin/review/' + hash);
-          var resp = await api('/api/admin/preview/' + this.detail.tx_id);
-          var text = await resp.text();
-          this.detailSource = text.substring(0, 5000);
+          // Load screenshot and source preview in parallel
+          var promises = [];
+          var self = this;
+          promises.push(
+            api('/api/admin/preview/' + this.detail.tx_id).then(function (resp) {
+              return resp.text();
+            }).then(function (text) {
+              self.detailSource = text.substring(0, 5000);
+            }).catch(function () {})
+          );
+          if (this.detail.has_screenshot) {
+            promises.push(
+              api('/api/admin/screenshot/' + hash).then(function (resp) {
+                if (resp.ok) return resp.blob();
+              }).then(function (blob) {
+                if (blob) self.detailScreenshotUrl = URL.createObjectURL(blob);
+              }).catch(function () {})
+            );
+          }
+          await Promise.all(promises);
         } catch (e) {
           this.detail = null;
           this.error = 'Failed to load scan details';
@@ -158,6 +208,10 @@ document.addEventListener('alpine:init', function () {
         this.showModal = false;
         this.detail = null;
         this.detailSource = '';
+        if (this.detailScreenshotUrl) {
+          URL.revokeObjectURL(this.detailScreenshotUrl);
+          this.detailScreenshotUrl = '';
+        }
       }
     };
   });

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5427C8"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="256" height="256" rx="48" fill="url(#bg)"/>
+  <!-- Magnifying glass handle -->
+  <line x1="160" y1="164" x2="200" y2="204" stroke="white" stroke-width="16" stroke-linecap="round"/>
+  <!-- Magnifying glass lens (outer ring) -->
+  <circle cx="112" cy="112" r="56" fill="none" stroke="white" stroke-width="12"/>
+  <!-- Lens interior - subtle tint -->
+  <circle cx="112" cy="112" r="50" fill="white" fill-opacity="0.12"/>
+  <!-- Scan lines inside lens -->
+  <line x1="84" y1="98" x2="140" y2="98" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
+  <line x1="84" y1="114" x2="132" y2="114" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="84" y1="130" x2="122" y2="130" stroke="white" stroke-width="5" stroke-linecap="round" opacity="0.35"/>
+  <!-- Green checkmark badge -->
+  <circle cx="168" cy="168" r="24" fill="#16A34A"/>
+  <circle cx="168" cy="168" r="24" fill="none" stroke="#5427C8" stroke-width="3"/>
+  <polyline points="156,168 165,177 182,158" fill="none" stroke="white" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

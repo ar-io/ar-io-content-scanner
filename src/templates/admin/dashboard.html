@@ -27,6 +27,13 @@
         </button>
       </div>
 
+      <!-- Safe Browsing domain warning -->
+      <template x-if="stats.safe_browsing && stats.safe_browsing.enabled && stats.safe_browsing.domain_flagged">
+        <div style="background: var(--color-red); color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 12px; font-weight: 600; font-size: 0.9rem;">
+          WARNING: Your gateway domain is flagged by Google Safe Browsing. Users may see browser warnings. Review and block flagged content immediately.
+        </div>
+      </template>
+
       <!-- Mode banner -->
       <div class="mode-banner" :class="stats.mode === 'enforce' ? 'mode-enforce' : 'mode-dry-run'">
         <span x-show="stats.mode === 'dry-run'">Dry Run Mode &mdash; detections are logged but content is not blocked</span>
@@ -54,7 +61,7 @@
       </div>
 
       <!-- System Health -->
-      <div class="grid-2col">
+      <div class="grid-3col">
         <!-- Scanner Health -->
         <div class="card">
           <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Scanner Health</h3>
@@ -76,29 +83,76 @@
           </div>
         </div>
 
-        <!-- Backfill Status -->
+        <!-- Verdict Feed Status (only shown when configured) -->
+        <template x-if="stats.verdict_feed && stats.verdict_feed.enabled">
+        <div class="card">
+          <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Verdict Feed</h3>
+            <div class="grid-kv">
+              <div style="color: var(--color-gray);">Peers</div>
+              <div style="font-weight: 600;" x-text="stats.verdict_feed.peers ? stats.verdict_feed.peers.length : 0"></div>
+              <div style="color: var(--color-gray);">Imported Verdicts</div>
+              <div style="font-weight: 600;" x-text="stats.verdict_feed.import_stats ? stats.verdict_feed.import_stats.total_imported : 0"></div>
+              <template x-for="peer in (stats.verdict_feed.peers || [])" :key="peer.peer_url">
+                <template x-if="true">
+                  <div style="display: contents;">
+                    <div style="color: var(--color-gray); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis;" x-text="peer.peer_url"></div>
+                    <div style="font-size: 0.8rem;">
+                      <span x-show="peer.consecutive_errors === 0" style="color: var(--color-green); font-weight: 600;">OK</span>
+                      <span x-show="peer.consecutive_errors > 0" style="color: var(--color-red); font-weight: 600;" x-text="'Error (' + peer.consecutive_errors + ')'"></span>
+                      <span style="color: var(--color-gray);"> &mdash; </span>
+                      <span x-text="peer.imported_count + ' imported'"></span>
+                    </div>
+                  </div>
+                </template>
+              </template>
+            </div>
+        </div>
+        </template>
+
+        <!-- Backfill Status (only shown when configured) -->
+        <template x-if="stats.backfill && stats.backfill.enabled">
         <div class="card">
           <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Backfill Status</h3>
-          <template x-if="!stats.backfill.enabled">
-            <div style="padding: 12px 0;">
-              <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Enable backfill in your .env to proactively scan existing cached content.</p>
-            </div>
-          </template>
-          <template x-if="stats.backfill.enabled">
-            <div class="grid-kv">
-              <div style="color: var(--color-gray);">Status</div>
-              <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed > 0 ? 'Complete' : 'In Progress'"></div>
-              <div style="color: var(--color-gray);">Files Scanned</div>
-              <div style="font-weight: 600;" x-text="stats.backfill.files_scanned.toLocaleString()"></div>
-              <div style="color: var(--color-gray);">Malicious Found</div>
-              <div style="font-weight: 600;" :style="stats.backfill.malicious_found > 0 ? 'color: var(--color-red)' : ''" x-text="stats.backfill.malicious_found"></div>
-              <div style="color: var(--color-gray);">Sweeps Completed</div>
-              <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed"></div>
-              <div style="color: var(--color-gray);">Last Sweep</div>
-              <div style="font-weight: 600;" x-text="formatTimestamp(stats.backfill.last_sweep_at)"></div>
-            </div>
-          </template>
+          <div class="grid-kv">
+            <div style="color: var(--color-gray);">Status</div>
+            <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed > 0 ? 'Complete' : 'In Progress'"></div>
+            <div style="color: var(--color-gray);">Files Scanned</div>
+            <div style="font-weight: 600;" x-text="stats.backfill.files_scanned.toLocaleString()"></div>
+            <div style="color: var(--color-gray);">Malicious Found</div>
+            <div style="font-weight: 600;" :style="stats.backfill.malicious_found > 0 ? 'color: var(--color-red)' : ''" x-text="stats.backfill.malicious_found"></div>
+            <div style="color: var(--color-gray);">Sweeps Completed</div>
+            <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed"></div>
+            <div style="color: var(--color-gray);">Last Sweep</div>
+            <div style="font-weight: 600;" x-text="formatTimestamp(stats.backfill.last_sweep_at)"></div>
+          </div>
         </div>
+        </template>
+
+        <!-- Safe Browsing Status (only shown when configured) -->
+        <template x-if="stats.safe_browsing && stats.safe_browsing.enabled">
+        <div class="card">
+          <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Google Safe Browsing</h3>
+          <div class="grid-kv">
+            <div style="color: var(--color-gray);">Gateway Domain</div>
+            <div style="font-weight: 600;">
+              <span x-show="stats.safe_browsing.domain_flagged" style="color: var(--color-red);">FLAGGED</span>
+              <span x-show="!stats.safe_browsing.domain_flagged" style="color: var(--color-green);">Clean</span>
+            </div>
+            <div style="color: var(--color-gray);">API Checks</div>
+            <div style="font-weight: 600;" x-text="stats.safe_browsing.checks"></div>
+            <div style="color: var(--color-gray);">URLs Flagged</div>
+            <div style="font-weight: 600;" :style="stats.safe_browsing.flagged > 0 ? 'color: var(--color-red)' : ''" x-text="stats.safe_browsing.flagged"></div>
+            <div style="color: var(--color-gray);">Escalations</div>
+            <div style="font-weight: 600;" x-text="stats.safe_browsing.escalations"></div>
+            <div style="color: var(--color-gray);">Check Interval</div>
+            <div style="font-weight: 600;" x-text="stats.safe_browsing.check_interval + 's'"></div>
+            <div style="color: var(--color-gray);">DB: Flagged</div>
+            <div style="font-weight: 600;" :style="stats.safe_browsing.stats.flagged > 0 ? 'color: var(--color-red)' : ''" x-text="stats.safe_browsing.stats.flagged"></div>
+            <div style="color: var(--color-gray);">DB: Unchecked</div>
+            <div style="font-weight: 600;" x-text="stats.safe_browsing.stats.unchecked"></div>
+          </div>
+        </div>
+        </template>
       </div>
 
       <!-- Recent Detections -->
@@ -131,7 +185,14 @@
                 <template x-for="d in stats.recent_detections" :key="d.content_hash">
                   <tr class="clickable" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', d.content_hash)">
                     <td x-text="formatTimestamp(d.scanned_at)" style="white-space: nowrap;"></td>
-                    <td><span class="mono" x-text="truncateId(d.tx_id, 20)"></span></td>
+                    <td>
+                      <template x-if="txUrl(d.tx_id)">
+                        <a :href="txUrl(d.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(d.tx_id, 20)" :title="d.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'" @click.stop></a>
+                      </template>
+                      <template x-if="!txUrl(d.tx_id)">
+                        <span class="mono" x-text="truncateId(d.tx_id, 20)"></span>
+                      </template>
+                    </td>
                     <td><span :class="badgeClass(d.verdict)" x-text="d.verdict"></span></td>
                     <td>
                       <template x-for="r in parseRules(d.matched_rules)">

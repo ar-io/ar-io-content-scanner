@@ -5,6 +5,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+# Install Playwright browsers to a shared path accessible by all users
+# (default ~/.cache/ms-playwright/ would only be accessible to root)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps chromium
 RUN useradd -m -u 1000 scanner
 
 COPY xgboost_model.pkl .

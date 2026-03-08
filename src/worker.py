@@ -4,7 +4,11 @@ import asyncio
 import logging
 
 from src.backfill import BackfillScanner
+from src.config import Settings
 from src.db import ScannerDB
+from src.feed.poller import FeedPoller
+from src.metrics import ScanMetrics
+from src.safe_browsing import SafeBrowsingClient
 from src.scanner import Scanner
 
 logger = logging.getLogger("scanner.worker")
@@ -17,11 +21,19 @@ class WorkerPool:
         db: ScannerDB,
         concurrency: int = 2,
         backfill: BackfillScanner | None = None,
+        feed_poller: FeedPoller | None = None,
+        safe_browsing: SafeBrowsingClient | None = None,
+        settings: Settings | None = None,
+        metrics: ScanMetrics | None = None,
     ):
         self.scanner = scanner
         self.db = db
         self.concurrency = concurrency
         self.backfill = backfill
+        self.feed_poller = feed_poller
+        self.safe_browsing = safe_browsing
+        self.settings = settings
+        self.metrics = metrics
         self._tasks: list[asyncio.Task] = []
         self._running = False
 
@@ -53,6 +65,21 @@ class WorkerPool:
             self._tasks.append(
                 asyncio.create_task(
                     self._backfill_loop(), name="backfill-sweep"
+                )
+            )
+
+        if self.feed_poller is not None:
+            self._tasks.append(
+                asyncio.create_task(
+                    self._feed_poll_loop(), name="feed-poll"
+                )
+            )
+
+        if self.safe_browsing is not None:
+            self._tasks.append(
+                asyncio.create_task(
+                    self._safe_browsing_monitor_loop(),
+                    name="safe-browsing-monitor",
                 )
             )
 
@@ -124,6 +151,89 @@ class WorkerPool:
                 break
             except Exception:
                 logger.exception("Backfill sweep error")
+                await asyncio.sleep(60)
+
+    async def _feed_poll_loop(self) -> None:
+        """Periodically poll peers for new verdicts."""
+        await asyncio.sleep(10)  # let workers initialize first
+
+        while self._running:
+            try:
+                await self.feed_poller.poll_all()
+                await asyncio.sleep(
+                    self.feed_poller.settings.verdict_feed_poll_interval
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Feed poll error")
+                await asyncio.sleep(60)
+
+    async def _safe_browsing_monitor_loop(self) -> None:
+        """Periodically check gateway domain + recent malicious URLs."""
+        await asyncio.sleep(15)  # let workers initialize first
+
+        gateway_url = (
+            self.settings.gateway_public_url if self.settings else ""
+        )
+        if not gateway_url:
+            logger.warning(
+                "Safe Browsing monitor disabled: GATEWAY_PUBLIC_URL not set. "
+                "Set it to enable periodic domain + URL monitoring."
+            )
+            return
+
+        while self._running:
+            try:
+                # Always check the bare gateway domain first
+                urls_to_check: list[str] = [gateway_url + "/"]
+
+                # Batch-check recent malicious verdict URLs
+                all_recent = self.db.get_recent_malicious_urls(limit=50)
+                recent = [
+                    item for item in all_recent if item["tx_id"]
+                ]
+                for item in recent:
+                    urls_to_check.append(
+                        f"{gateway_url}/{item['tx_id']}"
+                    )
+
+                results = await self.safe_browsing.check_urls(urls_to_check)
+
+                # First result is the gateway domain itself
+                domain_result = results[0]
+                if self.metrics:
+                    self.metrics.set_safe_browsing_domain_flagged(
+                        domain_result.flagged
+                    )
+                if domain_result.flagged:
+                    logger.error(
+                        "GATEWAY DOMAIN FLAGGED by Google Safe Browsing",
+                        extra={
+                            "url": domain_result.url,
+                            "threat_types": domain_result.threat_types,
+                        },
+                    )
+
+                # Update per-content SB status (skip domain result)
+                content_results = results[1:]
+                for item, sb_result in zip(recent, content_results):
+                    if self.metrics:
+                        self.metrics.record_safe_browsing_check(
+                            sb_result.flagged
+                        )
+                    self.db.update_safe_browsing_status(
+                        item["content_hash"], sb_result.flagged
+                    )
+
+                await asyncio.sleep(
+                    self.settings.safe_browsing_check_interval
+                )
+
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Safe Browsing monitor error")
                 await asyncio.sleep(60)
 
     async def _cleanup_loop(self) -> None:
