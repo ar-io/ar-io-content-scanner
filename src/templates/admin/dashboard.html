@@ -168,7 +168,7 @@
         </div>
         </template>
 
-        <!-- Safe Browsing Status (only shown when configured) -->
+        <!-- Safe Browsing Status (always shown) -->
         <template x-if="stats.safe_browsing && stats.safe_browsing.enabled">
         <div class="card">
           <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Google Safe Browsing</h3>
@@ -176,21 +176,29 @@
             <div style="color: var(--color-gray);">Gateway Domain</div>
             <div style="font-weight: 600;">
               <span x-show="stats.safe_browsing.domain_flagged" style="color: var(--color-red);">FLAGGED</span>
-              <span x-show="!stats.safe_browsing.domain_flagged && stats.safe_browsing.checks > 0" style="color: var(--color-green);">Clean</span>
-              <span x-show="!stats.safe_browsing.domain_flagged && stats.safe_browsing.checks === 0" style="color: var(--color-gray);">Pending first check...</span>
+              <span x-show="!stats.safe_browsing.domain_flagged && stats.safe_browsing.domain_checks > 0" style="color: var(--color-green);">Clean</span>
+              <span x-show="!stats.safe_browsing.domain_flagged && stats.safe_browsing.domain_checks === 0" style="color: var(--color-gray);">Pending first check...</span>
             </div>
-            <div style="color: var(--color-gray);">API Checks</div>
-            <div style="font-weight: 600;" x-text="stats.safe_browsing.checks"></div>
-            <div style="color: var(--color-gray);">URLs Flagged</div>
-            <div style="font-weight: 600;" :style="stats.safe_browsing.flagged > 0 ? 'color: var(--color-red)' : ''" x-text="stats.safe_browsing.flagged"></div>
-            <div style="color: var(--color-gray);">Escalations</div>
-            <div style="font-weight: 600;" x-text="stats.safe_browsing.escalations"></div>
+            <template x-if="stats.safe_browsing.domain_flagged && stats.safe_browsing.domain_threats && stats.safe_browsing.domain_threats.length">
+              <div style="display: contents;">
+                <div style="color: var(--color-gray);">Threat Types</div>
+                <div style="font-weight: 600; color: var(--color-red);" x-text="stats.safe_browsing.domain_threats.join(', ')"></div>
+              </div>
+            </template>
+            <div style="color: var(--color-gray);">Domain Checks</div>
+            <div style="font-weight: 600;" x-text="stats.safe_browsing.domain_checks"></div>
+            <template x-if="stats.safe_browsing.api_key_set">
+              <div style="display: contents;">
+                <div style="color: var(--color-gray);">URL Checks</div>
+                <div style="font-weight: 600;" x-text="stats.safe_browsing.checks"></div>
+                <div style="color: var(--color-gray);">URLs Flagged</div>
+                <div style="font-weight: 600;" :style="stats.safe_browsing.flagged > 0 ? 'color: var(--color-red)' : ''" x-text="stats.safe_browsing.flagged"></div>
+                <div style="color: var(--color-gray);">Escalations</div>
+                <div style="font-weight: 600;" x-text="stats.safe_browsing.escalations"></div>
+              </div>
+            </template>
             <div style="color: var(--color-gray);">Check Interval</div>
             <div style="font-weight: 600;" x-text="stats.safe_browsing.check_interval + 's'"></div>
-            <div style="color: var(--color-gray);">DB: Flagged</div>
-            <div style="font-weight: 600;" :style="stats.safe_browsing.stats.flagged > 0 ? 'color: var(--color-red)' : ''" x-text="stats.safe_browsing.stats.flagged"></div>
-            <div style="color: var(--color-gray);">DB: Unchecked</div>
-            <div style="font-weight: 600;" x-text="stats.safe_browsing.stats.unchecked"></div>
           </div>
         </div>
         </template>

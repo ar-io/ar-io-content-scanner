@@ -583,15 +583,18 @@ class TestSafeBrowsingMetrics:
 
     def test_domain_flagged(self, metrics):
         assert metrics.safe_browsing_domain_flagged is False
+        assert metrics.safe_browsing_domain_checks == 0
         metrics.set_safe_browsing_domain_flagged(True, threat_types=["SOCIAL_ENGINEERING"])
         assert metrics.safe_browsing_domain_flagged is True
         assert metrics.safe_browsing_domain_threats == ["SOCIAL_ENGINEERING"]
+        assert metrics.safe_browsing_domain_checks == 1
 
     def test_domain_unflagged_clears_threats(self, metrics):
         metrics.set_safe_browsing_domain_flagged(True, threat_types=["MALWARE"])
         metrics.set_safe_browsing_domain_flagged(False)
         assert metrics.safe_browsing_domain_flagged is False
         assert metrics.safe_browsing_domain_threats == []
+        assert metrics.safe_browsing_domain_checks == 2
 
     def test_to_dict_includes_sb(self, metrics):
         metrics.record_safe_browsing_check(flagged=True)
@@ -601,6 +604,7 @@ class TestSafeBrowsingMetrics:
         assert data["safe_browsing_flagged"] == 1
         assert data["safe_browsing_domain_flagged"] is True
         assert data["safe_browsing_domain_threats"] == ["MALWARE"]
+        assert data["safe_browsing_domain_checks"] == 1
 
     def test_prometheus_includes_sb(self, metrics):
         metrics.record_safe_browsing_check(flagged=True)
@@ -658,6 +662,7 @@ class TestSafeBrowsingAdminAPI:
         assert data["safe_browsing"]["api_key_set"] is True
         assert "domain_flagged" in data["safe_browsing"]
         assert "domain_threats" in data["safe_browsing"]
+        assert "domain_checks" in data["safe_browsing"]
         assert "stats" in data["safe_browsing"]
 
     def test_review_detail_includes_sb_status(self, client, db):

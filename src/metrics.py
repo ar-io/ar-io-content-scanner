@@ -36,6 +36,7 @@ class ScanMetrics:
         self.safe_browsing_errors = 0
         self.safe_browsing_domain_flagged = False
         self.safe_browsing_domain_threats: list[str] = []
+        self.safe_browsing_domain_checks = 0
         # Backfill metrics
         self.backfill_files_scanned = 0
         self.backfill_malicious_found = 0
@@ -111,6 +112,7 @@ class ScanMetrics:
         with self._lock:
             self.safe_browsing_domain_flagged = flagged
             self.safe_browsing_domain_threats = threat_types or []
+            self.safe_browsing_domain_checks += 1
 
     def record_backfill_sweep(self, stats: dict) -> None:
         with self._lock:
@@ -154,6 +156,7 @@ class ScanMetrics:
                 "safe_browsing_errors": self.safe_browsing_errors,
                 "safe_browsing_domain_flagged": self.safe_browsing_domain_flagged,
                 "safe_browsing_domain_threats": list(self.safe_browsing_domain_threats),
+                "safe_browsing_domain_checks": self.safe_browsing_domain_checks,
             }
 
     # --- Persistence: survive container restarts ---
@@ -180,6 +183,7 @@ class ScanMetrics:
                 "m_sb_escalations": str(self.safe_browsing_escalations),
                 "m_sb_errors": str(self.safe_browsing_errors),
                 "m_sb_domain_flagged": "1" if self.safe_browsing_domain_flagged else "0",
+                "m_sb_domain_checks": str(self.safe_browsing_domain_checks),
                 "m_v_clean": str(self.scans_by_verdict.get("clean", 0)),
                 "m_v_suspicious": str(self.scans_by_verdict.get("suspicious", 0)),
                 "m_v_malicious": str(self.scans_by_verdict.get("malicious", 0)),
@@ -206,6 +210,7 @@ class ScanMetrics:
             self.safe_browsing_escalations = int(db.get_state("m_sb_escalations", "0"))
             self.safe_browsing_errors = int(db.get_state("m_sb_errors", "0"))
             self.safe_browsing_domain_flagged = db.get_state("m_sb_domain_flagged", "0") == "1"
+            self.safe_browsing_domain_checks = int(db.get_state("m_sb_domain_checks", "0"))
             self.scans_by_verdict["clean"] = int(db.get_state("m_v_clean", "0"))
             self.scans_by_verdict["suspicious"] = int(db.get_state("m_v_suspicious", "0"))
             self.scans_by_verdict["malicious"] = int(db.get_state("m_v_malicious", "0"))

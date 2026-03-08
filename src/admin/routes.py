@@ -87,6 +87,7 @@ def build_admin_router(app_state) -> APIRouter:
                 "api_key_set": bool(settings.safe_browsing_api_key),
                 "domain_flagged": data.get("safe_browsing_domain_flagged", False),
                 "domain_threats": data.get("safe_browsing_domain_threats", []),
+                "domain_checks": data.get("safe_browsing_domain_checks", 0),
                 "checks": data.get("safe_browsing_checks", 0),
                 "flagged": data.get("safe_browsing_flagged", 0),
                 "escalations": data.get("safe_browsing_escalations", 0),
