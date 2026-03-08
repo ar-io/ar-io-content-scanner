@@ -46,20 +46,9 @@ class WorkerPool:
                 extra={"count": reset},
             )
 
-        # Restore persisted Safe Browsing counters
-        if self.metrics and self.safe_browsing:
-            self.metrics.safe_browsing_checks = int(
-                self.db.get_state("sb_checks", "0")
-            )
-            self.metrics.safe_browsing_flagged = int(
-                self.db.get_state("sb_flagged", "0")
-            )
-            self.metrics.safe_browsing_escalations = int(
-                self.db.get_state("sb_escalations", "0")
-            )
-            self.metrics.safe_browsing_errors = int(
-                self.db.get_state("sb_errors", "0")
-            )
+        # Restore all persisted metrics from database
+        if self.metrics:
+            self.metrics.load_from_db(self.db)
 
         self._running = True
 
@@ -241,14 +230,6 @@ class WorkerPool:
                         item["content_hash"], sb_result.flagged
                     )
 
-                # Persist SB counters to DB
-                if self.metrics and self.metrics.sb_dirty:
-                    snap = self.metrics.get_safe_browsing_snapshot()
-                    self.db.save_state("sb_checks", str(snap["checks"]))
-                    self.db.save_state("sb_flagged", str(snap["flagged"]))
-                    self.db.save_state("sb_escalations", str(snap["escalations"]))
-                    self.db.save_state("sb_errors", str(snap["errors"]))
-
                 await asyncio.sleep(
                     self.settings.safe_browsing_check_interval
                 )
@@ -275,6 +256,9 @@ class WorkerPool:
                         "Reset failed items for retry",
                         extra={"count": retried},
                     )
+                # Persist all metrics to DB
+                if self.metrics:
+                    self.metrics.persist_to_db(self.db)
             except asyncio.CancelledError:
                 break
             except Exception:

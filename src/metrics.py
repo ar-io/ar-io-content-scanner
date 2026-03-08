@@ -95,32 +95,14 @@ class ScanMetrics:
             self.safe_browsing_checks += 1
             if flagged:
                 self.safe_browsing_flagged += 1
-            self._sb_dirty = True
 
     def record_safe_browsing_escalation(self) -> None:
         with self._lock:
             self.safe_browsing_escalations += 1
-            self._sb_dirty = True
 
     def record_safe_browsing_error(self) -> None:
         with self._lock:
             self.safe_browsing_errors += 1
-            self._sb_dirty = True
-
-    def get_safe_browsing_snapshot(self) -> dict:
-        """Return current SB counters for persistence."""
-        with self._lock:
-            self._sb_dirty = False
-            return {
-                "checks": self.safe_browsing_checks,
-                "flagged": self.safe_browsing_flagged,
-                "escalations": self.safe_browsing_escalations,
-                "errors": self.safe_browsing_errors,
-            }
-
-    @property
-    def sb_dirty(self) -> bool:
-        return getattr(self, "_sb_dirty", False)
 
     def set_safe_browsing_domain_flagged(self, flagged: bool) -> None:
         with self._lock:
@@ -168,6 +150,72 @@ class ScanMetrics:
                 "safe_browsing_errors": self.safe_browsing_errors,
                 "safe_browsing_domain_flagged": self.safe_browsing_domain_flagged,
             }
+
+    # --- Persistence: survive container restarts ---
+
+    _PERSIST_KEYS = (
+        "scans_total", "scans_skipped_not_html",
+        "cache_hits", "cache_misses",
+        "blocks_sent", "blocks_failed",
+        "_total_scan_ms", "last_webhook_at",
+        "feed_verdicts_imported", "feed_verdicts_exported",
+        "feed_poll_errors", "feed_on_demand_hits", "feed_on_demand_misses",
+        "safe_browsing_checks", "safe_browsing_flagged",
+        "safe_browsing_escalations", "safe_browsing_errors",
+        "safe_browsing_domain_flagged",
+        "scans_by_verdict_clean", "scans_by_verdict_suspicious",
+        "scans_by_verdict_malicious",
+    )
+
+    def persist_to_db(self, db) -> None:
+        """Save all cumulative counters to scanner_state table."""
+        with self._lock:
+            db.save_state("m_scans_total", str(self.scans_total))
+            db.save_state("m_scans_skipped", str(self.scans_skipped_not_html))
+            db.save_state("m_cache_hits", str(self.cache_hits))
+            db.save_state("m_cache_misses", str(self.cache_misses))
+            db.save_state("m_blocks_sent", str(self.blocks_sent))
+            db.save_state("m_blocks_failed", str(self.blocks_failed))
+            db.save_state("m_total_scan_ms", str(self._total_scan_ms))
+            db.save_state("m_last_webhook_at", str(int(self.last_webhook_at)))
+            db.save_state("m_feed_imported", str(self.feed_verdicts_imported))
+            db.save_state("m_feed_exported", str(self.feed_verdicts_exported))
+            db.save_state("m_feed_poll_errors", str(self.feed_poll_errors))
+            db.save_state("m_feed_od_hits", str(self.feed_on_demand_hits))
+            db.save_state("m_feed_od_misses", str(self.feed_on_demand_misses))
+            db.save_state("m_sb_checks", str(self.safe_browsing_checks))
+            db.save_state("m_sb_flagged", str(self.safe_browsing_flagged))
+            db.save_state("m_sb_escalations", str(self.safe_browsing_escalations))
+            db.save_state("m_sb_errors", str(self.safe_browsing_errors))
+            db.save_state("m_sb_domain_flagged", "1" if self.safe_browsing_domain_flagged else "0")
+            db.save_state("m_v_clean", str(self.scans_by_verdict.get("clean", 0)))
+            db.save_state("m_v_suspicious", str(self.scans_by_verdict.get("suspicious", 0)))
+            db.save_state("m_v_malicious", str(self.scans_by_verdict.get("malicious", 0)))
+
+    def load_from_db(self, db) -> None:
+        """Restore cumulative counters from scanner_state table."""
+        with self._lock:
+            self.scans_total = int(db.get_state("m_scans_total", "0"))
+            self.scans_skipped_not_html = int(db.get_state("m_scans_skipped", "0"))
+            self.cache_hits = int(db.get_state("m_cache_hits", "0"))
+            self.cache_misses = int(db.get_state("m_cache_misses", "0"))
+            self.blocks_sent = int(db.get_state("m_blocks_sent", "0"))
+            self.blocks_failed = int(db.get_state("m_blocks_failed", "0"))
+            self._total_scan_ms = int(db.get_state("m_total_scan_ms", "0"))
+            self.last_webhook_at = float(db.get_state("m_last_webhook_at", "0"))
+            self.feed_verdicts_imported = int(db.get_state("m_feed_imported", "0"))
+            self.feed_verdicts_exported = int(db.get_state("m_feed_exported", "0"))
+            self.feed_poll_errors = int(db.get_state("m_feed_poll_errors", "0"))
+            self.feed_on_demand_hits = int(db.get_state("m_feed_od_hits", "0"))
+            self.feed_on_demand_misses = int(db.get_state("m_feed_od_misses", "0"))
+            self.safe_browsing_checks = int(db.get_state("m_sb_checks", "0"))
+            self.safe_browsing_flagged = int(db.get_state("m_sb_flagged", "0"))
+            self.safe_browsing_escalations = int(db.get_state("m_sb_escalations", "0"))
+            self.safe_browsing_errors = int(db.get_state("m_sb_errors", "0"))
+            self.safe_browsing_domain_flagged = db.get_state("m_sb_domain_flagged", "0") == "1"
+            self.scans_by_verdict["clean"] = int(db.get_state("m_v_clean", "0"))
+            self.scans_by_verdict["suspicious"] = int(db.get_state("m_v_suspicious", "0"))
+            self.scans_by_verdict["malicious"] = int(db.get_state("m_v_malicious", "0"))
 
     def to_prometheus(self, queue_depth: int = 0) -> str:
         with self._lock:
