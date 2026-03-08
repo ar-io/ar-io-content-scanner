@@ -29,7 +29,7 @@
       <!-- Verdict filter -->
       <div style="display: flex; gap: 4px; align-items: center;">
         <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Verdict:</span>
-        <template x-for="v in ['all','clean','suspicious','malicious','skipped']">
+        <template x-for="v in ['all','clean','suspicious','malicious']">
           <button class="filter-btn" :class="{ active: verdictFilter === v }" @click="setFilter('verdictFilter', v)" x-text="v" style="text-transform: capitalize;"></button>
         </template>
       </div>

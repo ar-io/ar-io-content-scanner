@@ -424,7 +424,10 @@ class ScannerDB:
             like = f"%{query}%"
             params.extend([like, like])
 
-        if verdict_filter != "all":
+        if verdict_filter == "all":
+            # Exclude skipped by default — they're cache markers, not real scans
+            conditions.append("v.verdict != 'skipped'")
+        elif verdict_filter != "all_including_skipped":
             conditions.append("v.verdict = ?")
             params.append(verdict_filter)
 

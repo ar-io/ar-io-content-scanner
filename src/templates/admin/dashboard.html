@@ -22,8 +22,8 @@
       <!-- Auto-refresh indicator -->
       <div style="display: flex; justify-content: flex-end; margin-bottom: 8px; gap: 12px; align-items: center;">
         <span style="font-size: 0.75rem; color: var(--color-gray);">Updated <span x-text="lastUpdatedAgo"></span></span>
-        <button @click="autoRefresh = !autoRefresh" class="btn btn-sm" :class="autoRefresh ? 'btn-outline' : 'btn-primary'" style="font-size: 0.7rem; padding: 2px 10px;">
-          <span x-text="autoRefresh ? 'Pause' : 'Resume'"></span>
+        <button @click="autoRefresh = !autoRefresh" class="btn btn-sm" :class="autoRefresh ? 'btn-outline' : 'btn-primary'" style="font-size: 0.7rem; padding: 2px 10px;" :title="autoRefresh ? 'Pause auto-refresh' : 'Resume auto-refresh'">
+          <span x-text="autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'"></span>
         </button>
       </div>
 
@@ -129,7 +129,7 @@
               </thead>
               <tbody>
                 <template x-for="d in stats.recent_detections" :key="d.content_hash">
-                  <tr class="clickable" @click="$dispatch('switch-tab', 'review')">
+                  <tr class="clickable" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', d.content_hash)">
                     <td x-text="formatTimestamp(d.scanned_at)" style="white-space: nowrap;"></td>
                     <td><span class="mono" x-text="truncateId(d.tx_id, 20)"></span></td>
                     <td><span :class="badgeClass(d.verdict)" x-text="d.verdict"></span></td>
