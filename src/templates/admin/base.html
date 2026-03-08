@@ -70,8 +70,8 @@
     </div>
 
     <!-- Tabs -->
-    <div x-data="{ activeTab: 'dashboard' }"
-         x-init="var h = location.hash.substring(1); if (['dashboard','review','history','settings'].indexOf(h) !== -1) activeTab = h; $watch('activeTab', function(v) { history.replaceState(null, '', '#' + v); });"
+    <div x-data="{ activeTab: (['dashboard','review','history','settings'].indexOf(location.hash.substring(1)) !== -1 ? location.hash.substring(1) : 'dashboard') }"
+         x-init="$watch('activeTab', function(v) { history.replaceState(null, '', '#' + v) })"
          @switch-tab="activeTab = $event.detail" class="content-area" style="padding: 0 32px;">
       <div class="tab-bar" style="margin: 0 -32px;">
         <button class="tab-btn" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">Dashboard</button>
