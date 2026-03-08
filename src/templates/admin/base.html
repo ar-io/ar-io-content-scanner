@@ -60,8 +60,8 @@
           <span class="header-version" x-text="'v' + $store.health.version"></span>
         </template>
         <span class="header-health">
-          <span class="health-dot"></span>
-          online
+          <span class="health-dot" :class="'dot-' + $store.health.status"></span>
+          <span x-text="$store.health.status === 'healthy' ? 'online' : $store.health.status"></span>
         </span>
         <button @click="$store.auth.logout()" class="btn btn-sm" style="background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2);">
           Logout
@@ -70,7 +70,9 @@
     </div>
 
     <!-- Tabs -->
-    <div x-data="{ activeTab: 'dashboard' }" @switch-tab="activeTab = $event.detail" class="content-area" style="padding: 0 32px;">
+    <div x-data="{ activeTab: 'dashboard' }"
+         x-init="var h = location.hash.substring(1); if (['dashboard','review','history','settings'].indexOf(h) !== -1) activeTab = h; $watch('activeTab', function(v) { history.replaceState(null, '', '#' + v); });"
+         @switch-tab="activeTab = $event.detail" class="content-area" style="padding: 0 32px;">
       <div class="tab-bar" style="margin: 0 -32px;">
         <button class="tab-btn" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">Dashboard</button>
         <button class="tab-btn" :class="{ active: activeTab === 'review' }" @click="activeTab = 'review'">Review Queue</button>

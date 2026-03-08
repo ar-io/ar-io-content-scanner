@@ -321,9 +321,34 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #4ade80;
+  background: var(--color-gray);
   display: inline-block;
+  transition: background 0.3s;
 }
+.health-dot.dot-healthy { background: #4ade80; }
+.health-dot.dot-degraded { background: var(--color-amber); animation: pulse-dot 2s infinite; }
+.health-dot.dot-offline { background: var(--color-red); animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ---- Copy button ---- */
+.copy-btn {
+  display: inline-block;
+  cursor: pointer;
+  opacity: 0.3;
+  transition: opacity 0.15s;
+  margin-left: 6px;
+  vertical-align: middle;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  color: var(--color-primary);
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-family: inherit;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.copy-btn:hover { opacity: 1; }
 
 /* ---- Login ---- */
 .login-container {

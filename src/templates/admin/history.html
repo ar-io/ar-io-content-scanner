@@ -50,8 +50,9 @@
         </template>
       </div>
 
-      <div style="margin-left: auto; font-size: 0.8rem; color: var(--color-gray);">
-        <span x-text="total.toLocaleString()"></span> results
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: var(--color-gray);"><span x-text="total.toLocaleString()"></span> results</span>
+        <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       </div>
     </div>
   </div>
@@ -105,6 +106,9 @@
               <td>
                 <template x-if="item.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red); font-size: 0.8rem;" title="Confirmed malicious">&#10003;</span></template>
                 <template x-if="item.admin_status === 'confirmed_clean'"><span style="color: var(--color-green); font-size: 0.8rem;" title="Dismissed as false positive">&#10005;</span></template>
+                <template x-if="!item.admin_status && (item.verdict === 'malicious' || item.verdict === 'suspicious')">
+                  <button class="copy-btn" style="opacity: 0.6; font-size: 0.7rem;" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', item.content_hash)" title="Open in Review Queue">review &rarr;</button>
+                </template>
               </td>
             </tr>
           </template>

@@ -24,7 +24,7 @@ document.addEventListener('alpine:init', function () {
         this.key = key;
         this.authenticated = true;
         localStorage.setItem('scanner_admin_key', key);
-        Alpine.store('health').check();
+        Alpine.store('health').startPolling();
         return true;
       } catch (e) {
         this.error = 'Cannot connect to scanner service';
@@ -39,20 +39,29 @@ document.addEventListener('alpine:init', function () {
     }
   });
 
-  // --- Health Store (for header mode/version) ---
+  // --- Health Store (for header mode/version/status) ---
   Alpine.store('health', {
     mode: '',
     version: '',
+    status: 'checking',
     loaded: false,
+    _interval: null,
     async check() {
       try {
         var resp = await fetch('/health');
-        if (!resp.ok) return;
         var data = await resp.json();
-        this.mode = data.mode || '';
-        this.version = data.version || '';
+        this.mode = data.mode || this.mode;
+        this.version = data.version || this.version;
+        this.status = (resp.ok && data.status !== 'degraded') ? 'healthy' : 'degraded';
         this.loaded = true;
-      } catch (e) { /* silently fail */ }
+      } catch (e) {
+        this.status = 'offline';
+      }
+    },
+    startPolling() {
+      this.check();
+      var self = this;
+      this._interval = setInterval(function() { self.check(); }, 30000);
     }
   });
 
@@ -62,11 +71,12 @@ document.addEventListener('alpine:init', function () {
     show: function (message, type) {
       type = type || 'success';
       var id = Date.now() + Math.random();
+      var duration = type === 'error' ? 8000 : 4000;
       this.items.push({ id: id, message: message, type: type });
       var self = this;
       setTimeout(function () {
         self.items = self.items.filter(function (t) { return t.id !== id; });
-      }, 4000);
+      }, duration);
     }
   });
 
@@ -152,4 +162,21 @@ async function downloadCsv(path, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function copyToClipboard(text) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(function() {
+    Alpine.store('toast').show('Copied to clipboard', 'info');
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    Alpine.store('toast').show('Copied to clipboard', 'info');
+  });
 }

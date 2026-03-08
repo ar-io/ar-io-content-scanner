@@ -1,5 +1,5 @@
 <!-- Review Queue Tab -->
-<div x-data="reviewTab" x-init="init()" @close-modal.window="closeModal(); confirmDialog.show = false;">
+<div x-data="reviewTab" x-init="init()" @close-modal.window="closeModal(); confirmDialog.show = false;" @search-review.window="searchQuery = $event.detail; statusFilter = 'all'; page = 1; load()">
   <div class="section-header">
     <h2>Review Queue</h2>
     <p>Content flagged as malicious or suspicious by the detection engine. <strong>Confirm</strong> to mark as a true positive (blocks content in enforce mode). <strong>Dismiss</strong> to mark as a false positive (content will never be re-flagged). All decisions are used as ground truth for ML model retraining.</p>
@@ -42,8 +42,9 @@
           <option value="ml_score_desc" :selected="sort === 'ml_score_desc'">Highest ML Score</option>
         </select>
       </div>
-      <div style="margin-left: auto; font-size: 0.8rem; color: var(--color-gray);">
-        <span x-text="total"></span> items
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: var(--color-gray);"><span x-text="total"></span> items</span>
+        <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       </div>
     </div>
   </div>
@@ -74,10 +75,12 @@
         <div style="margin-bottom: 8px;">
           <span style="font-size: 0.8rem; color: var(--color-gray);">TX ID: </span>
           <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
+          <button class="copy-btn" @click.stop="copyToClipboard(item.tx_id)" title="Copy TX ID">copy</button>
         </div>
         <div style="margin-bottom: 12px;">
           <span style="font-size: 0.75rem; color: var(--color-gray);">Content Hash: </span>
           <span class="mono" style="font-size: 0.75rem; color: var(--color-gray);" x-text="item.content_hash"></span>
+          <button class="copy-btn" @click.stop="copyToClipboard(item.content_hash)" title="Copy content hash">copy</button>
         </div>
 
         <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
@@ -114,13 +117,13 @@
           <template x-if="item.admin_override === 'confirmed_malicious'">
             <div style="display: flex; gap: 10px; align-items: center;">
               <span style="font-size: 0.8rem; color: var(--color-red); font-weight: 600;">&#10003; Confirmed as malicious</span>
-              <button class="btn btn-sm btn-outline" style="font-size: 0.75rem; padding: 2px 10px;" @click="revertOverride(item.content_hash)">Revert</button>
+              <button class="btn btn-sm btn-outline" style="font-size: 0.75rem; padding: 2px 10px;" @click="promptRevert(item.content_hash)">Revert</button>
             </div>
           </template>
           <template x-if="item.admin_override === 'confirmed_clean'">
             <div style="display: flex; gap: 10px; align-items: center;">
               <span style="font-size: 0.8rem; color: var(--color-green); font-weight: 600;">&#10005; Dismissed as false positive</span>
-              <button class="btn btn-sm btn-outline" style="font-size: 0.75rem; padding: 2px 10px;" @click="revertOverride(item.content_hash)">Revert</button>
+              <button class="btn btn-sm btn-outline" style="font-size: 0.75rem; padding: 2px 10px;" @click="promptRevert(item.content_hash)">Revert</button>
             </div>
           </template>
           <button class="btn btn-sm" style="margin-left: auto; background: var(--color-card); color: var(--color-black);" @click="openDetail(item.content_hash)">
@@ -144,17 +147,21 @@
       <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">
         <span x-show="confirmDialog.action === 'confirm'">Confirm as Malicious</span>
         <span x-show="confirmDialog.action === 'dismiss'">Dismiss as False Positive</span>
+        <span x-show="confirmDialog.action === 'revert'">Revert Override</span>
       </h3>
       <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 16px; line-height: 1.5;">
         <span x-show="confirmDialog.action === 'confirm'">This will permanently mark this content as malicious. In enforce mode, the content will be blocked immediately. This decision is used as ground truth for ML model retraining.</span>
         <span x-show="confirmDialog.action === 'dismiss'">This will mark this content as clean. The scanner will never re-flag this content, even during future backfill sweeps. This decision is used as ground truth for ML model retraining.</span>
+        <span x-show="confirmDialog.action === 'revert'">This will remove the admin override and restore the original scanner verdict. The item will return to pending review. In enforce mode, previously blocked content may become accessible again.</span>
       </p>
       <div style="margin-bottom: 12px; font-size: 0.8rem;">
         <span style="color: var(--color-gray);">Content: </span>
         <span class="mono" x-text="truncateId(confirmDialog.hash, 24)"></span>
       </div>
-      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 4px;">Notes (optional)</label>
-      <textarea x-model="confirmDialog.notes" placeholder="Add context for this decision (e.g., why it's a false positive, what brand was impersonated)..." rows="3"></textarea>
+      <div x-show="confirmDialog.action !== 'revert'">
+        <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 4px;">Notes (optional)</label>
+        <textarea x-model="confirmDialog.notes" placeholder="Add context for this decision (e.g., why it's a false positive, what brand was impersonated)..." rows="3"></textarea>
+      </div>
       <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
         <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false">Cancel</button>
         <template x-if="confirmDialog.action === 'confirm'">
@@ -166,6 +173,12 @@
         <template x-if="confirmDialog.action === 'dismiss'">
           <button class="btn btn-primary btn-sm" @click="executeAction()" :disabled="confirmDialog.loading">
             <span x-show="!confirmDialog.loading">Dismiss</span>
+            <span x-show="confirmDialog.loading" class="spinner"></span>
+          </button>
+        </template>
+        <template x-if="confirmDialog.action === 'revert'">
+          <button class="btn btn-sm" @click="executeAction()" :disabled="confirmDialog.loading" style="background: var(--color-amber); color: white;">
+            <span x-show="!confirmDialog.loading">Revert Override</span>
             <span x-show="confirmDialog.loading" class="spinner"></span>
           </button>
         </template>
@@ -191,9 +204,15 @@
             <div style="color: var(--color-gray); font-weight: 600;">Verdict</div>
             <div><span :class="badgeClass(detail.verdict)" x-text="detail.verdict"></span></div>
             <div style="color: var(--color-gray); font-weight: 600;">TX ID</div>
-            <div class="mono" style="word-break: break-all;" x-text="detail.tx_id"></div>
+            <div>
+              <span class="mono" style="word-break: break-all;" x-text="detail.tx_id"></span>
+              <button class="copy-btn" @click="copyToClipboard(detail.tx_id)" title="Copy TX ID">copy</button>
+            </div>
             <div style="color: var(--color-gray); font-weight: 600;">Content Hash</div>
-            <div class="mono" style="word-break: break-all;" x-text="detail.content_hash"></div>
+            <div>
+              <span class="mono" style="word-break: break-all;" x-text="detail.content_hash"></span>
+              <button class="copy-btn" @click="copyToClipboard(detail.content_hash)" title="Copy content hash">copy</button>
+            </div>
             <div style="color: var(--color-gray); font-weight: 600;">Matched Rules</div>
             <div>
               <template x-for="r in parseRules(detail.matched_rules)">
@@ -227,7 +246,7 @@
           </template>
           <template x-if="detail.admin_override">
             <div style="display: flex; gap: 10px; margin-top: 20px;">
-              <button class="btn btn-outline" @click="revertOverride(detail.content_hash); closeModal();">Revert Override</button>
+              <button class="btn btn-outline" @click="closeModal(); promptRevert(detail.content_hash);">Revert Override</button>
             </div>
           </template>
         </div>

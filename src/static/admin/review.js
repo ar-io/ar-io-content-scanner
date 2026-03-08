@@ -101,18 +101,24 @@ document.addEventListener('alpine:init', function () {
       async executeAction() {
         var dialog = this.confirmDialog;
         dialog.loading = true;
-        var endpoint = dialog.action === 'confirm' ? 'confirm' : 'dismiss';
         try {
-          await api('/api/admin/review/' + dialog.hash + '/' + endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ notes: dialog.notes })
-          });
-          dialog.show = false;
-          if (dialog.action === 'confirm') {
-            Alpine.store('toast').show('Content confirmed as malicious', 'success');
+          if (dialog.action === 'revert') {
+            await api('/api/admin/review/' + dialog.hash + '/revert', { method: 'POST' });
+            dialog.show = false;
+            Alpine.store('toast').show('Override reverted — item returned to pending review', 'success');
           } else {
-            Alpine.store('toast').show('Content dismissed as false positive', 'success');
+            var endpoint = dialog.action === 'confirm' ? 'confirm' : 'dismiss';
+            await api('/api/admin/review/' + dialog.hash + '/' + endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ notes: dialog.notes })
+            });
+            dialog.show = false;
+            if (dialog.action === 'confirm') {
+              Alpine.store('toast').show('Content confirmed as malicious', 'success');
+            } else {
+              Alpine.store('toast').show('Content dismissed as false positive', 'success');
+            }
           }
           await this.load();
         } catch (e) {
@@ -121,14 +127,14 @@ document.addEventListener('alpine:init', function () {
         dialog.loading = false;
       },
 
-      async revertOverride(hash) {
-        try {
-          await api('/api/admin/review/' + hash + '/revert', { method: 'POST' });
-          Alpine.store('toast').show('Override reverted — item returned to pending review', 'success');
-          await this.load();
-        } catch (e) {
-          Alpine.store('toast').show('Revert failed: ' + (e.message || 'Unknown error'), 'error');
-        }
+      promptRevert(hash) {
+        this.confirmDialog = {
+          show: true,
+          hash: hash,
+          action: 'revert',
+          notes: '',
+          loading: false
+        };
       },
 
       // --- Detail modal ---
