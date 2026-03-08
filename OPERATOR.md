@@ -108,10 +108,14 @@ Returns:
 ### Metrics
 
 ```bash
+# JSON metrics
 curl http://localhost:3100/metrics
+
+# Prometheus format (for Grafana, Prometheus scraping, etc.)
+curl http://localhost:3100/metrics/prometheus
 ```
 
-Returns:
+Returns (JSON):
 ```json
 {
   "scans_total": 1523,
@@ -197,6 +201,7 @@ Example log entry for a blocked phishing page:
 | `SCANNER_PORT` | `3100` | HTTP server port |
 | `SCANNER_WORKERS` | `2` | Concurrent scan workers |
 | `ML_MODEL_ENABLED` | `true` | Enable XGBoost ML scoring |
+| `ML_SUSPICIOUS_THRESHOLD` | `0.95` | ML score threshold for SUSPICIOUS escalation (0-1) |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error` |
 | `MAX_SCAN_BYTES` | `262144` | Max HTML bytes to scan (256KB) |
 | `SCAN_TIMEOUT` | `10000` | Gateway fetch timeout in ms |
@@ -224,6 +229,24 @@ Example log entry for a blocked phishing page:
 |----------|---------|-------------|
 | `SAFE_BROWSING_API_KEY` | *(none)* | Google Safe Browsing API key (enables the integration) |
 | `SAFE_BROWSING_CHECK_INTERVAL` | `300` | Seconds between periodic domain + URL monitoring (min 60) |
+
+### Screenshots
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCREENSHOT_ENABLED` | `true` | Capture screenshots of flagged content for admin review |
+| `SCREENSHOT_DIR` | `/app/data/screenshots` | Directory to store screenshot files |
+| `SCREENSHOT_TIMEOUT_MS` | `15000` | Page load + capture timeout in ms |
+
+### Backfill
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKFILL_ENABLED` | `false` | Enable proactive filesystem sweep of cached content |
+| `BACKFILL_DATA_PATH` | *(none)* | Gateway's contiguous data directory (required if backfill enabled) |
+| `BACKFILL_GATEWAY_DB_PATH` | *(none)* | Gateway's `data.db` path (read-only, for hash→TX ID lookups) |
+| `BACKFILL_RATE` | `5` | Max files scanned per second during backfill |
+| `BACKFILL_INTERVAL_HOURS` | `24` | Hours between re-sweeps (0 = one-shot) |
 
 ### Rule Toggles
 
@@ -486,3 +509,143 @@ Review the admin dashboard's review queue for malicious content. Confirm and blo
 ## Sidecar Downtime
 
 If Content Scanner is down (restart, crash, upgrade), webhook events from the gateway are silently dropped. Content cached during this window will not be scanned. The `restart: unless-stopped` policy keeps downtime brief, and the Docker health check triggers automatic restarts within ~30 seconds.
+
+## Multi-Gateway Deployment
+
+If you operate multiple ar.io gateways, each gateway runs its own Content Scanner sidecar. The verdict feed connects them so a detection on one gateway protects all of them.
+
+```
+┌─────────────┐        ┌─────────────────┐
+│  Gateway A   │───────>│  Scanner A       │──┐
+│  (Server 1)  │<───────│  :3100           │  │
+└─────────────┘        └─────────────────┘  │
+                                             │  Verdict Feed
+┌─────────────┐        ┌─────────────────┐  │  (shared API key)
+│  Gateway B   │───────>│  Scanner B       │──┘
+│  (Server 2)  │<───────│  :3100           │
+└─────────────┘        └─────────────────┘
+```
+
+### Why One Scanner Per Gateway
+
+- **Fault isolation**: If one scanner crashes, only its gateway is affected
+- **Independent scaling**: Each scanner's worker count is tuned to its gateway's traffic
+- **Local blocking**: Each scanner calls its own gateway's admin API directly
+- **Local backfill**: Each scanner walks its own gateway's contiguous data directory
+- **No single point of failure**: Gateways continue serving content if a peer scanner is down
+
+### Setup
+
+#### Step 1: Deploy a Scanner for Each Gateway
+
+On **Server A** (gateway-a.example.com):
+
+```bash
+# gateway-a's scanner .env
+GATEWAY_URL=http://core:4000
+ADMIN_API_KEY=gateway-a-admin-key
+SCANNER_ADMIN_KEY=scanner-admin-key-a
+SCANNER_MODE=enforce
+GATEWAY_PUBLIC_URL=https://gateway-a.example.com
+
+# Verdict feed — shared across all scanners
+VERDICT_API_KEY=your-shared-fleet-secret
+VERDICT_FEED_URLS=http://scanner-b.example.com:3100
+```
+
+On **Server B** (gateway-b.example.com):
+
+```bash
+# gateway-b's scanner .env
+GATEWAY_URL=http://core:4000
+ADMIN_API_KEY=gateway-b-admin-key
+SCANNER_ADMIN_KEY=scanner-admin-key-b
+SCANNER_MODE=enforce
+GATEWAY_PUBLIC_URL=https://gateway-b.example.com
+
+# Verdict feed — points back to Scanner A
+VERDICT_API_KEY=your-shared-fleet-secret
+VERDICT_FEED_URLS=http://scanner-a.example.com:3100
+```
+
+Each scanner has its own `GATEWAY_URL`, `ADMIN_API_KEY`, and database. The only shared config is `VERDICT_API_KEY` (must be identical) and `VERDICT_FEED_URLS` (each scanner lists the others).
+
+#### Step 2: Network Access
+
+Scanners must be able to reach each other over the network for the verdict feed. Options:
+
+- **Public internet**: Expose each scanner's port (e.g., `3100`) and use public hostnames. The `VERDICT_API_KEY` authenticates all feed requests.
+- **VPN/private network**: If your servers share a private network (WireGuard, Tailscale, VPC peering), use private IPs. This is more secure since the feed port isn't publicly exposed.
+- **Same server**: If multiple gateways run on the same server, scanners can reference each other by container name on a shared Docker network.
+
+#### Step 3: Configure Docker Compose
+
+Each scanner joins its own gateway's Docker network. If the gateway uses a custom network name, set `DOCKER_NETWORK_NAME`:
+
+```yaml
+# docker-compose.yml for Scanner A
+services:
+  content-scanner:
+    build: .
+    ports:
+      - "3100:3100"
+    environment:
+      GATEWAY_URL: "http://core:4000"
+      ADMIN_API_KEY: "${ADMIN_API_KEY}"
+      SCANNER_ADMIN_KEY: "${SCANNER_ADMIN_KEY}"
+      SCANNER_MODE: "${SCANNER_MODE:-enforce}"
+      GATEWAY_PUBLIC_URL: "${GATEWAY_PUBLIC_URL:-}"
+      VERDICT_API_KEY: "${VERDICT_API_KEY:-}"
+      VERDICT_FEED_URLS: "${VERDICT_FEED_URLS:-}"
+      # ... other settings
+    volumes:
+      - scanner-data:/app/data
+    restart: unless-stopped
+    networks:
+      - ar-io-network
+
+networks:
+  ar-io-network:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-ar-io-network}
+```
+
+#### Step 4: Optional — Backfill Per Gateway
+
+Each scanner can independently backfill its gateway's existing content:
+
+```bash
+# Scanner A — mount gateway-a's data
+BACKFILL_ENABLED=true
+BACKFILL_DATA_PATH=/gateway-data/contiguous
+BACKFILL_GATEWAY_DB_PATH=/gateway-data/sqlite/data.db
+```
+
+Mount the appropriate volumes in each scanner's `docker-compose.yml`:
+
+```yaml
+volumes:
+  - scanner-data:/app/data
+  - /path/to/gateway-a/data/contiguous:/gateway-data/contiguous:ro
+  - /path/to/gateway-a/data/sqlite:/gateway-data/sqlite:ro
+```
+
+Backfill is per-gateway because each gateway has its own contiguous data directory and `data.db`. The verdict feed does not replace backfill — backfill scans files that were cached before the scanner was deployed.
+
+### Adding a Third Scanner
+
+To add Scanner C to an existing A+B fleet:
+
+1. Deploy Scanner C with its own gateway config
+2. Set `VERDICT_FEED_URLS` on Scanner C to `http://scanner-a:3100,http://scanner-b:3100`
+3. Update Scanner A's `VERDICT_FEED_URLS` to include Scanner C
+4. Update Scanner B's `VERDICT_FEED_URLS` to include Scanner C
+5. Restart Scanners A and B to pick up the new peer
+
+Scanner C will immediately import all existing MALICIOUS verdicts from peers on its first poll cycle (within `VERDICT_FEED_POLL_INTERVAL` seconds).
+
+### Trust Mode for Fleets
+
+For identically-configured scanners (same rules, same ML model), use `VERDICT_FEED_TRUST_MODE=all` to share CLEAN verdicts too. This saves duplicate scanning when the same content is cached on multiple gateways.
+
+For mixed-configuration fleets (different rule settings or versions), use `VERDICT_FEED_TRUST_MODE=malicious_only` (the default). Each scanner will independently verify content that peers deemed clean.

@@ -114,6 +114,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `SCANNER_PORT` | No | `3100` | HTTP server port |
 | `SCANNER_WORKERS` | No | `2` | Number of concurrent scan workers |
 | `ML_MODEL_ENABLED` | No | `true` | Enable XGBoost ML scoring |
+| `ML_SUSPICIOUS_THRESHOLD` | No | `0.95` | ML score threshold for SUSPICIOUS escalation (0-1) |
 | `LOG_LEVEL` | No | `info` | Logging level (debug, info, warning, error) |
 | `MAX_SCAN_BYTES` | No | `262144` | Max HTML bytes to scan (256KB) |
 | `SCAN_TIMEOUT` | No | `10000` | Gateway fetch timeout in milliseconds |
@@ -161,7 +162,8 @@ Admin actions (confirm/dismiss) create overrides that persist across restarts. D
 |----------|--------|-------------|
 | `/scan` | POST | Receives `DATA_CACHED` webhook events (returns 202) |
 | `/health` | GET | Health check (mode, version) |
-| `/metrics` | GET | Scan statistics (verdicts, cache hits, blocks, queue depth) |
+| `/metrics` | GET | Scan statistics JSON (verdicts, cache hits, blocks, queue depth) |
+| `/metrics/prometheus` | GET | Prometheus-formatted metrics (text/plain) |
 | `/admin` | GET | Admin dashboard (browser UI) |
 | `/api/admin/stats` | GET | Dashboard data (requires `SCANNER_ADMIN_KEY`) |
 | `/api/admin/review` | GET | Review queue with filters |
@@ -175,6 +177,18 @@ Admin actions (confirm/dismiss) create overrides that persist across restarts. D
 | `/api/admin/settings` | GET | Current scanner configuration |
 | `/api/verdicts/:hash` | GET | Single verdict lookup (requires `VERDICT_API_KEY`) |
 | `/api/verdicts` | GET | Paginated verdict feed (requires `VERDICT_API_KEY`) |
+
+## Multi-Gateway Deployment
+
+Each gateway runs its own Content Scanner sidecar. Scanners share detections via the verdict feed — when one scanner detects a phishing page, all peers auto-block it too.
+
+```
+Gateway A ──> Scanner A ──┐
+                          ├── Verdict Feed (shared API key)
+Gateway B ──> Scanner B ──┘
+```
+
+Each scanner has its own `GATEWAY_URL`, `ADMIN_API_KEY`, and database. The only shared config is `VERDICT_API_KEY` and `VERDICT_FEED_URLS`. See the [Operator Guide](OPERATOR.md#multi-gateway-deployment) for full setup instructions.
 
 ## Verdict Feed
 
