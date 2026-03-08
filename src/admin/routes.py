@@ -418,6 +418,7 @@ def build_admin_router(app_state) -> APIRouter:
             "mode": settings.scanner_mode,
             "version": settings.scanner_version,
             "gateway_url": settings.gateway_url,
+            "gateway_public_url": settings.gateway_public_url,
             "port": settings.scanner_port,
             "workers": settings.scanner_workers,
             "log_level": settings.log_level,
