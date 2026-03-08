@@ -193,21 +193,35 @@ class BackfillScanner:
             stats["total_files"] = len(files)
 
             processed = 0
+            total = stats["total_files"]
+            # Log progress adaptively: every 5% or at least every 100 files
+            log_interval = max(100, total // 20) if total > 0 else 100
             for filepath, hash_str in files:
                 try:
                     await self._process_file(
                         filepath, hash_str, gateway_db, stats, loop
                     )
                     processed += 1
-                    if processed % 500 == 0:
+                    if processed % log_interval == 0 or processed == total:
+                        elapsed = time.monotonic() - start_time
+                        rate_actual = processed / elapsed if elapsed > 0 else 0
+                        eta = (
+                            int((total - processed) / rate_actual)
+                            if rate_actual > 0
+                            else 0
+                        )
+                        pct = round(processed / total * 100, 1) if total > 0 else 0
                         logger.info(
                             "backfill_progress",
                             extra={
                                 "processed": processed,
-                                "total": stats["total_files"],
+                                "total": total,
+                                "percent": pct,
                                 "scanned": stats["scanned"],
                                 "malicious": stats["malicious"],
                                 "skipped_cached": stats["skipped_cached"],
+                                "files_per_sec": round(rate_actual, 1),
+                                "eta_seconds": eta,
                             },
                         )
                     await asyncio.sleep(delay)

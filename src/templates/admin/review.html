@@ -112,10 +112,16 @@
             </button>
           </template>
           <template x-if="item.admin_override === 'confirmed_malicious'">
-            <span style="font-size: 0.8rem; color: var(--color-red); font-weight: 600;">&#10003; Confirmed as malicious</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <span style="font-size: 0.8rem; color: var(--color-red); font-weight: 600;">&#10003; Confirmed as malicious</span>
+              <button class="btn btn-sm btn-outline" style="font-size: 0.75rem; padding: 2px 10px;" @click="revertOverride(item.content_hash)">Revert</button>
+            </div>
           </template>
           <template x-if="item.admin_override === 'confirmed_clean'">
-            <span style="font-size: 0.8rem; color: var(--color-green); font-weight: 600;">&#10005; Dismissed as false positive</span>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <span style="font-size: 0.8rem; color: var(--color-green); font-weight: 600;">&#10005; Dismissed as false positive</span>
+              <button class="btn btn-sm btn-outline" style="font-size: 0.75rem; padding: 2px 10px;" @click="revertOverride(item.content_hash)">Revert</button>
+            </div>
           </template>
           <button class="btn btn-sm" style="margin-left: auto; background: var(--color-card); color: var(--color-black);" @click="openDetail(item.content_hash)">
             View Details
@@ -217,6 +223,11 @@
             <div style="display: flex; gap: 10px; margin-top: 20px;">
               <button class="btn btn-danger" @click="closeModal(); promptConfirm(detail.content_hash);">Confirm Malicious</button>
               <button class="btn btn-outline" @click="closeModal(); promptDismiss(detail.content_hash);">Dismiss (False Positive)</button>
+            </div>
+          </template>
+          <template x-if="detail.admin_override">
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+              <button class="btn btn-outline" @click="revertOverride(detail.content_hash); closeModal();">Revert Override</button>
             </div>
           </template>
         </div>

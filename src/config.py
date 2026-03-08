@@ -20,6 +20,7 @@ class Settings:
     # ML model
     ml_model_enabled: bool = True
     ml_model_path: str = "./xgboost_model.pkl"
+    ml_suspicious_threshold: float = 0.95
 
     # Rule toggles
     rule_seed_phrase: bool = True
@@ -88,17 +89,40 @@ def load_settings() -> Settings:
             "BACKFILL_DATA_PATH is required when BACKFILL_ENABLED=true"
         )
 
+    scanner_workers = int(os.environ.get("SCANNER_WORKERS", "2"))
+    if scanner_workers < 1:
+        raise ValueError("SCANNER_WORKERS must be >= 1")
+
+    max_scan_bytes = int(os.environ.get("MAX_SCAN_BYTES", "262144"))
+    if max_scan_bytes < 1:
+        raise ValueError("MAX_SCAN_BYTES must be >= 1")
+
+    scan_timeout_ms = int(os.environ.get("SCAN_TIMEOUT", "10000"))
+    if scan_timeout_ms < 1:
+        raise ValueError("SCAN_TIMEOUT must be >= 1")
+
+    backfill_rate = int(os.environ.get("BACKFILL_RATE", "5"))
+    if backfill_rate < 1:
+        raise ValueError("BACKFILL_RATE must be >= 1")
+
+    ml_suspicious_threshold = float(
+        os.environ.get("ML_SUSPICIOUS_THRESHOLD", "0.95")
+    )
+    if not 0 < ml_suspicious_threshold <= 1:
+        raise ValueError("ML_SUSPICIOUS_THRESHOLD must be between 0 and 1")
+
     return Settings(
         gateway_url=gateway_url.rstrip("/"),
         admin_api_key=admin_api_key,
         admin_ui_enabled=admin_ui_enabled,
         scanner_admin_key=scanner_admin_key,
         scanner_port=int(os.environ.get("SCANNER_PORT", "3100")),
-        scanner_workers=int(os.environ.get("SCANNER_WORKERS", "2")),
+        scanner_workers=scanner_workers,
         scanner_mode=mode,
         ml_model_enabled=os.environ.get("ML_MODEL_ENABLED", "true").lower()
         == "true",
         ml_model_path=os.environ.get("ML_MODEL_PATH", "./xgboost_model.pkl"),
+        ml_suspicious_threshold=ml_suspicious_threshold,
         rule_seed_phrase=os.environ.get("RULE_SEED_PHRASE", "true").lower()
         == "true",
         rule_external_credential_form=os.environ.get(
@@ -113,15 +137,15 @@ def load_settings() -> Settings:
             "RULE_OBFUSCATED_LOADER", "true"
         ).lower()
         == "true",
-        max_scan_bytes=int(os.environ.get("MAX_SCAN_BYTES", "262144")),
-        scan_timeout_ms=int(os.environ.get("SCAN_TIMEOUT", "10000")),
+        max_scan_bytes=max_scan_bytes,
+        scan_timeout_ms=scan_timeout_ms,
         db_path=os.environ.get("DB_PATH", "/app/data/scanner.db"),
         log_level=os.environ.get("LOG_LEVEL", "info"),
         scanner_version=os.environ.get("SCANNER_VERSION", "0.1.0"),
         backfill_enabled=backfill_enabled,
         backfill_data_path=backfill_data_path,
         backfill_gateway_db_path=os.environ.get("BACKFILL_GATEWAY_DB_PATH", ""),
-        backfill_rate=int(os.environ.get("BACKFILL_RATE", "5")),
+        backfill_rate=backfill_rate,
         backfill_interval_hours=int(
             os.environ.get("BACKFILL_INTERVAL_HOURS", "24")
         ),

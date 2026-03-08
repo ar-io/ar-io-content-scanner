@@ -64,6 +64,7 @@ def build_admin_router(app_state) -> APIRouter:
                 "avg_scan_ms": data["avg_scan_ms"],
                 "queue_depth": data["queue_depth"],
             },
+            "last_webhook_at": data["last_webhook_at"],
             "backfill": {
                 "enabled": settings.backfill_enabled,
                 "files_scanned": data["backfill_files_scanned"],
@@ -216,6 +217,46 @@ def build_admin_router(app_state) -> APIRouter:
         )
 
         return {"status": "dismissed"}
+
+    @router.post("/api/admin/review/{content_hash}/revert")
+    async def review_revert(
+        content_hash: str,
+        _key: str = Depends(auth),
+    ):
+        if not _HASH_PATTERN.match(content_hash):
+            raise HTTPException(status_code=400, detail="Invalid content hash")
+
+        db = _state.db
+        override = db.get_override(content_hash)
+        if override is None:
+            raise HTTPException(
+                status_code=404, detail="No override found for this content"
+            )
+
+        # Restore the original verdict
+        original = override.original_verdict
+        try:
+            original_verdict = Verdict(original)
+        except ValueError:
+            original_verdict = Verdict.SUSPICIOUS
+
+        db.update_verdict(content_hash, original_verdict)
+        db.delete_override(content_hash)
+
+        logger.info(
+            "admin_revert",
+            extra={
+                "content_hash": content_hash,
+                "tx_id": override.tx_id,
+                "reverted_from": override.admin_verdict,
+                "restored_verdict": original_verdict.value,
+            },
+        )
+
+        return {
+            "status": "reverted",
+            "restored_verdict": original_verdict.value,
+        }
 
     @router.get("/api/admin/history")
     async def history_list(

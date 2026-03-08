@@ -71,6 +71,8 @@
             <div style="font-weight: 600;" x-text="stats.metrics.avg_scan_ms + ' ms'"></div>
             <div style="color: var(--color-gray);">Cache Hit Rate</div>
             <div style="font-weight: 600;" x-text="cacheHitRate"></div>
+            <div style="color: var(--color-gray);">Last Webhook</div>
+            <div style="font-weight: 600;" :style="webhookStale ? 'color: var(--color-amber)' : ''" x-text="lastWebhookFormatted"></div>
           </div>
         </div>
 

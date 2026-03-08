@@ -61,6 +61,24 @@ document.addEventListener('alpine:init', function () {
         var total = m.cache_hits + m.cache_misses;
         if (total === 0) return '\u2014';
         return Math.round((m.cache_hits / total) * 100) + '%';
+      },
+
+      get lastWebhookFormatted() {
+        if (!this.stats || !this.stats.last_webhook_at) return 'No webhooks received';
+        // Reference _tickCount for reactivity
+        void this._tickCount;
+        var secs = Math.floor(Date.now() / 1000 - this.stats.last_webhook_at);
+        if (secs < 5) return 'just now';
+        if (secs < 60) return secs + 's ago';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        return Math.floor(secs / 3600) + 'h ago';
+      },
+
+      get webhookStale() {
+        if (!this.stats || !this.stats.last_webhook_at) return true;
+        void this._tickCount;
+        var secs = Math.floor(Date.now() / 1000 - this.stats.last_webhook_at);
+        return secs > 300;
       }
     };
   });

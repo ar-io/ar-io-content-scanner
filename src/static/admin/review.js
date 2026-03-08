@@ -121,6 +121,16 @@ document.addEventListener('alpine:init', function () {
         dialog.loading = false;
       },
 
+      async revertOverride(hash) {
+        try {
+          await api('/api/admin/review/' + hash + '/revert', { method: 'POST' });
+          Alpine.store('toast').show('Override reverted — item returned to pending review', 'success');
+          await this.load();
+        } catch (e) {
+          Alpine.store('toast').show('Revert failed: ' + (e.message || 'Unknown error'), 'error');
+        }
+      },
+
       // --- Detail modal ---
       async openDetail(hash) {
         this.detailLoading = true;

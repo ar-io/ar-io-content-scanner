@@ -289,6 +289,14 @@ class ScannerDB:
             created_at=row[7],
         )
 
+    def delete_override(self, content_hash: str) -> bool:
+        cursor = self.conn.execute(
+            "DELETE FROM admin_overrides WHERE content_hash = ?",
+            (content_hash,),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
     def update_verdict(self, content_hash: str, new_verdict: Verdict) -> None:
         self.conn.execute(
             "UPDATE scan_verdicts SET verdict = ? WHERE content_hash = ?",

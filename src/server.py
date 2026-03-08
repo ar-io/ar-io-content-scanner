@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.backfill import BackfillScanner
@@ -72,12 +73,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "Content scanner started",
             extra={
                 "mode": settings.scanner_mode,
+                "version": settings.scanner_version,
                 "gateway": settings.gateway_url,
                 "workers": settings.scanner_workers,
+                "ml_model": "enabled" if classifier else "disabled",
+                "ml_threshold": settings.ml_suspicious_threshold,
+                "max_scan_bytes": settings.max_scan_bytes,
+                "backfill": settings.backfill_enabled,
+                "admin_ui": settings.admin_ui_enabled,
             },
         )
         yield
-        await pool.stop()
+        logger.info("Shutting down worker pool...")
+        try:
+            await asyncio.wait_for(pool.stop(), timeout=10)
+        except asyncio.TimeoutError:
+            logger.warning("Worker pool shutdown timed out after 10s")
         await gateway.close()
         db.close()
         logger.info("Content scanner stopped")
@@ -109,17 +120,57 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {
-            "status": "ok",
-            "mode": settings.scanner_mode,
-            "version": settings.scanner_version,
-        }
+        checks: dict = {}
+        healthy = True
+
+        # Database connectivity
+        try:
+            db.queue_depth()
+            checks["database"] = "ok"
+        except Exception:
+            checks["database"] = "error"
+            healthy = False
+
+        # ML model
+        if settings.ml_model_enabled:
+            checks["ml_model"] = "loaded" if classifier else "failed"
+            if not classifier:
+                healthy = False
+        else:
+            checks["ml_model"] = "disabled"
+
+        # Worker pool
+        checks["workers"] = "running" if pool._running else "stopped"
+        if not pool._running:
+            healthy = False
+
+        # Last webhook indicator
+        data = metrics.to_dict()
+        checks["last_webhook_at"] = data["last_webhook_at"]
+
+        status_code = 200 if healthy else 503
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": "ok" if healthy else "degraded",
+                "mode": settings.scanner_mode,
+                "version": settings.scanner_version,
+                "checks": checks,
+            },
+        )
 
     @app.get("/metrics")
     async def get_metrics():
         data = metrics.to_dict()
         data["queue_depth"] = db.queue_depth()
         return data
+
+    @app.get("/metrics/prometheus")
+    async def get_metrics_prometheus():
+        return PlainTextResponse(
+            content=metrics.to_prometheus(queue_depth=db.queue_depth()),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     @app.exception_handler(Exception)
     async def unhandled_exception(request: Request, exc: Exception):

@@ -25,6 +25,7 @@ class RuleEngine:
         classifier: PhishingClassifier | None = None,
     ):
         self.classifier = classifier
+        self.ml_threshold = settings.ml_suspicious_threshold
         self.rules: list[Rule] = []
 
         if settings.rule_seed_phrase:
@@ -61,11 +62,11 @@ class RuleEngine:
 
         # Verdict combination matrix:
         #   MALICIOUS + any ML  -> MALICIOUS
-        #   CLEAN + ML >= 0.95  -> SUSPICIOUS (ML alone never blocks)
-        #   CLEAN + ML < 0.95   -> CLEAN
+        #   CLEAN + ML >= threshold -> SUSPICIOUS (ML alone never blocks)
+        #   CLEAN + ML < threshold  -> CLEAN
         if rule_verdict == Verdict.MALICIOUS:
             final = Verdict.MALICIOUS
-        elif ml_score is not None and ml_score >= 0.95:
+        elif ml_score is not None and ml_score >= self.ml_threshold:
             final = Verdict.SUSPICIOUS
         else:
             final = Verdict.CLEAN

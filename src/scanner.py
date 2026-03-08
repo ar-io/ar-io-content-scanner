@@ -69,6 +69,7 @@ class Scanner:
 
     async def process_webhook(self, payload: WebhookPayload) -> None:
         data = payload.data
+        self.metrics.record_webhook()
 
         if payload.event != "data-cached":
             return
@@ -117,10 +118,14 @@ class Scanner:
                     cached.verdict == Verdict.MALICIOUS
                     and self.settings.scanner_mode == "enforce"
                 ):
+                    try:
+                        rules = json.loads(cached.matched_rules or "[]")
+                    except (json.JSONDecodeError, TypeError):
+                        rules = []
                     await self.gateway.block_data(
                         data.id,
                         data.hash,
-                        json.loads(cached.matched_rules or "[]"),
+                        rules,
                     )
                 return
 
@@ -166,10 +171,14 @@ class Scanner:
                         scanner_version=self.settings.scanner_version,
                     )
                     if self.settings.scanner_mode == "enforce":
+                        try:
+                            rules = json.loads(override.original_rules or "[]")
+                        except (json.JSONDecodeError, TypeError):
+                            rules = []
                         success = await self.gateway.block_data(
                             tx_id,
                             content_hash,
-                            json.loads(override.original_rules or "[]"),
+                            rules,
                         )
                         self.metrics.record_block(success)
                     logger.warning(
