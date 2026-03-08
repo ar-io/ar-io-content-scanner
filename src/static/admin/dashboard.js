@@ -63,6 +63,47 @@ document.addEventListener('alpine:init', function () {
         return Math.round((m.cache_hits / total) * 100) + '%';
       },
 
+      get cacheHitPercent() {
+        if (!this.stats) return 0;
+        var m = this.stats.metrics;
+        var total = m.cache_hits + m.cache_misses;
+        if (total === 0) return 0;
+        return Math.round((m.cache_hits / total) * 100);
+      },
+
+      get cacheBarColor() {
+        var p = this.cacheHitPercent;
+        if (p >= 80) return 'var(--color-green)';
+        if (p >= 50) return 'var(--color-amber)';
+        return 'var(--color-red)';
+      },
+
+      get threatRate() {
+        if (!this.stats || !this.stats.counts.scans_total) return '';
+        var rate = this.stats.counts.malicious / this.stats.counts.scans_total * 100;
+        if (rate < 0.01 && this.stats.counts.malicious > 0) return '<0.01%';
+        return rate.toFixed(2) + '%';
+      },
+
+      get verdictBar() {
+        if (!this.stats || !this.stats.counts.scans_total) {
+          return { clean: 100, suspicious: 0, malicious: 0 };
+        }
+        var c = this.stats.counts;
+        var total = c.scans_total;
+        var mal = c.malicious / total * 100;
+        var sus = c.suspicious / total * 100;
+        var clean = 100 - mal - sus;
+        return {
+          clean: Math.max(0, clean),
+          suspicious: sus,
+          malicious: mal,
+          cleanCount: total - c.malicious - c.suspicious,
+          suspiciousCount: c.suspicious,
+          maliciousCount: c.malicious
+        };
+      },
+
       get lastWebhookFormatted() {
         if (!this.stats || !this.stats.last_webhook_at) return 'No webhooks received';
         // Reference _tickCount for reactivity

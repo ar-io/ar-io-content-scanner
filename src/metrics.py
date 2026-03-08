@@ -95,14 +95,32 @@ class ScanMetrics:
             self.safe_browsing_checks += 1
             if flagged:
                 self.safe_browsing_flagged += 1
+            self._sb_dirty = True
 
     def record_safe_browsing_escalation(self) -> None:
         with self._lock:
             self.safe_browsing_escalations += 1
+            self._sb_dirty = True
 
     def record_safe_browsing_error(self) -> None:
         with self._lock:
             self.safe_browsing_errors += 1
+            self._sb_dirty = True
+
+    def get_safe_browsing_snapshot(self) -> dict:
+        """Return current SB counters for persistence."""
+        with self._lock:
+            self._sb_dirty = False
+            return {
+                "checks": self.safe_browsing_checks,
+                "flagged": self.safe_browsing_flagged,
+                "escalations": self.safe_browsing_escalations,
+                "errors": self.safe_browsing_errors,
+            }
+
+    @property
+    def sb_dirty(self) -> bool:
+        return getattr(self, "_sb_dirty", False)
 
     def set_safe_browsing_domain_flagged(self, flagged: bool) -> None:
         with self._lock:

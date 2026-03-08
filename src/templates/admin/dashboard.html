@@ -1,8 +1,13 @@
 <!-- Dashboard Tab -->
 <div x-data="dashboardTab" x-init="init()">
-  <div class="section-header">
-    <h2>Dashboard</h2>
-    <p>Real-time overview of scanner activity, system health, and recent threat detections.</p>
+  <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h2 style="margin: 0;">Dashboard</h2>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <span style="font-size: 0.75rem; color: var(--color-gray);">Updated <span x-text="lastUpdatedAgo"></span></span>
+      <button @click="autoRefresh = !autoRefresh" class="btn btn-sm" :class="autoRefresh ? 'btn-outline' : 'btn-primary'" style="font-size: 0.7rem; padding: 2px 10px;" :title="autoRefresh ? 'Pause auto-refresh' : 'Resume auto-refresh'">
+        <span x-text="autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'"></span>
+      </button>
+    </div>
   </div>
 
   <!-- Loading state -->
@@ -19,14 +24,6 @@
 
   <template x-if="stats && !loading">
     <div>
-      <!-- Auto-refresh indicator -->
-      <div style="display: flex; justify-content: flex-end; margin-bottom: 8px; gap: 12px; align-items: center;">
-        <span style="font-size: 0.75rem; color: var(--color-gray);">Updated <span x-text="lastUpdatedAgo"></span></span>
-        <button @click="autoRefresh = !autoRefresh" class="btn btn-sm" :class="autoRefresh ? 'btn-outline' : 'btn-primary'" style="font-size: 0.7rem; padding: 2px 10px;" :title="autoRefresh ? 'Pause auto-refresh' : 'Resume auto-refresh'">
-          <span x-text="autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'"></span>
-        </button>
-      </div>
-
       <!-- Safe Browsing domain warning -->
       <template x-if="stats.safe_browsing && stats.safe_browsing.enabled && stats.safe_browsing.domain_flagged">
         <div style="background: var(--color-red); color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 12px; font-weight: 600; font-size: 0.9rem;">
@@ -34,34 +31,117 @@
         </div>
       </template>
 
-      <!-- Mode banner -->
-      <div class="mode-banner" :class="stats.mode === 'enforce' ? 'mode-enforce' : 'mode-dry-run'">
-        <span x-show="stats.mode === 'dry-run'">Dry Run Mode &mdash; detections are logged but content is not blocked</span>
-        <span x-show="stats.mode === 'enforce'">Enforce Mode &mdash; malicious content is automatically blocked</span>
-      </div>
-
       <!-- Stats Cards -->
       <div class="grid-stats">
         <div class="stat-card">
           <div class="stat-number" style="color: var(--color-primary);" x-text="stats.counts.scans_total.toLocaleString()"></div>
-          <div class="stat-label">Total HTML Scans</div>
+          <div class="stat-label">Total Scans</div>
         </div>
         <div class="stat-card">
           <div class="stat-number" style="color: var(--color-red);" x-text="stats.counts.malicious.toLocaleString()"></div>
-          <div class="stat-label">Threats Detected</div>
-        </div>
-        <div class="stat-card clickable" @click="$dispatch('switch-tab', 'review')">
-          <div class="stat-number" style="color: var(--color-amber);" x-text="stats.counts.pending_review.toLocaleString()"></div>
-          <div class="stat-label">Awaiting Review &rarr;</div>
+          <div class="stat-label">Malicious</div>
+          <div class="stat-subtitle" x-text="threatRate"></div>
         </div>
         <div class="stat-card">
-          <div class="stat-number" style="color: var(--color-green);" x-text="stats.metrics.blocks_sent || 0"></div>
-          <div class="stat-label">Blocks Sent (this session)</div>
+          <div class="stat-number" style="color: var(--color-amber);" x-text="stats.counts.suspicious.toLocaleString()"></div>
+          <div class="stat-label">Suspicious</div>
+        </div>
+        <div class="stat-card clickable" @click="$dispatch('switch-tab', 'review')">
+          <div class="stat-number" style="color: var(--color-primary);" x-text="stats.counts.pending_review.toLocaleString()"></div>
+          <div class="stat-label">Awaiting Review &rarr;</div>
         </div>
       </div>
 
+      <!-- Verdict Breakdown -->
+      <div class="verdict-bar-container" x-show="stats.counts.scans_total > 0">
+        <div class="verdict-bar">
+          <div class="verdict-bar-segment" :style="'width: ' + verdictBar.clean + '%; background: var(--color-green);'"></div>
+          <div class="verdict-bar-segment" :style="'width: ' + verdictBar.suspicious + '%; background: var(--color-amber);'"></div>
+          <div class="verdict-bar-segment" :style="'width: ' + verdictBar.malicious + '%; background: var(--color-red);'"></div>
+        </div>
+        <div class="verdict-bar-legend">
+          <div class="verdict-bar-legend-item">
+            <span class="verdict-bar-dot" style="background: var(--color-green);"></span>
+            <span>Clean <strong x-text="verdictBar.cleanCount.toLocaleString()"></strong></span>
+          </div>
+          <div class="verdict-bar-legend-item">
+            <span class="verdict-bar-dot" style="background: var(--color-amber);"></span>
+            <span>Suspicious <strong x-text="verdictBar.suspiciousCount.toLocaleString()"></strong></span>
+          </div>
+          <div class="verdict-bar-legend-item">
+            <span class="verdict-bar-dot" style="background: var(--color-red);"></span>
+            <span>Malicious <strong x-text="verdictBar.maliciousCount.toLocaleString()"></strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Detections -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 class="font-display" style="font-size: 1rem; margin: 0;">Recent Detections</h3>
+          <button class="btn btn-sm btn-outline" @click="$dispatch('switch-tab', 'review')" style="font-size: 0.75rem;">View All &rarr;</button>
+        </div>
+        <template x-if="stats.recent_detections.length === 0">
+          <div class="empty-state" style="padding: 32px;">
+            <div class="empty-state-icon">&#128737;</div>
+            <p class="empty-state-title">No detections yet</p>
+            <p class="empty-state-text">Malicious and suspicious content will appear here as it's detected.</p>
+          </div>
+        </template>
+        <template x-if="stats.recent_detections.length > 0">
+          <div style="overflow-x: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>TX ID</th>
+                  <th>Verdict</th>
+                  <th>Rules</th>
+                  <th>ML Score</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="d in stats.recent_detections" :key="d.content_hash">
+                  <tr class="clickable" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', d.content_hash)">
+                    <td x-text="formatTimestamp(d.scanned_at)" style="white-space: nowrap;"></td>
+                    <td>
+                      <template x-if="txUrl(d.tx_id)">
+                        <a :href="txUrl(d.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(d.tx_id, 20)" :title="d.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'" @click.stop></a>
+                      </template>
+                      <template x-if="!txUrl(d.tx_id)">
+                        <span class="mono" x-text="truncateId(d.tx_id, 20)"></span>
+                      </template>
+                    </td>
+                    <td><span :class="badgeClass(d.verdict)" x-text="d.verdict"></span></td>
+                    <td>
+                      <template x-for="r in parseRules(d.matched_rules)">
+                        <span class="pill" x-text="r"></span>
+                      </template>
+                    </td>
+                    <td>
+                      <span x-text="d.ml_score !== null ? d.ml_score.toFixed(3) : '\u2014'"></span>
+                      <template x-if="d.ml_score !== null">
+                        <span class="score-bar">
+                          <span class="score-bar-fill" :style="'width: ' + Math.min(d.ml_score * 100, 100) + '%; background: ' + scoreColor(d.ml_score)"></span>
+                        </span>
+                      </template>
+                    </td>
+                    <td>
+                      <template x-if="d.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red); font-weight: 600; font-size: 0.8rem;">Confirmed</span></template>
+                      <template x-if="d.admin_status === 'confirmed_clean'"><span style="color: var(--color-green); font-weight: 600; font-size: 0.8rem;">Dismissed</span></template>
+                      <template x-if="!d.admin_status"><span style="color: var(--color-amber); font-weight: 600; font-size: 0.8rem;">Pending</span></template>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </template>
+      </div>
+
       <!-- System Health -->
-      <div class="grid-3col">
+      <div class="grid-auto">
         <!-- Scanner Health -->
         <div class="card">
           <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Scanner Health</h3>
@@ -77,7 +157,20 @@
             <div style="color: var(--color-gray);">Avg Scan Time</div>
             <div style="font-weight: 600;" x-text="stats.metrics.avg_scan_ms + ' ms'"></div>
             <div style="color: var(--color-gray);">Cache Hit Rate</div>
-            <div style="font-weight: 600;" x-text="cacheHitRate"></div>
+            <div style="font-weight: 600;">
+              <span x-text="cacheHitRate"></span>
+              <span class="inline-bar" x-show="cacheHitPercent > 0">
+                <span class="inline-bar-fill" :style="'width: ' + cacheHitPercent + '%; background: ' + cacheBarColor"></span>
+              </span>
+            </div>
+            <div style="color: var(--color-gray);">Blocks Sent</div>
+            <div style="font-weight: 600;" x-text="stats.metrics.blocks_sent || 0"></div>
+            <template x-if="stats.metrics.blocks_failed > 0">
+              <div style="display: contents;">
+                <div style="color: var(--color-gray);">Blocks Failed</div>
+                <div style="font-weight: 600; color: var(--color-red);" x-text="stats.metrics.blocks_failed"></div>
+              </div>
+            </template>
             <div style="color: var(--color-gray);">Last Webhook</div>
             <div style="font-weight: 600;" :style="webhookStale ? 'color: var(--color-amber)' : ''" x-text="lastWebhookFormatted"></div>
           </div>
@@ -153,71 +246,6 @@
             <div style="font-weight: 600;" x-text="stats.safe_browsing.stats.unchecked"></div>
           </div>
         </div>
-        </template>
-      </div>
-
-      <!-- Recent Detections -->
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-          <h3 class="font-display" style="font-size: 1rem; margin: 0;">Recent Detections</h3>
-          <button class="btn btn-sm btn-outline" @click="$dispatch('switch-tab', 'review')" style="font-size: 0.75rem;">View All &rarr;</button>
-        </div>
-        <template x-if="stats.recent_detections.length === 0">
-          <div class="empty-state" style="padding: 32px;">
-            <div class="empty-state-icon">&#128737;</div>
-            <p class="empty-state-title">No detections yet</p>
-            <p class="empty-state-text">Malicious and suspicious content will appear here as it's detected.</p>
-          </div>
-        </template>
-        <template x-if="stats.recent_detections.length > 0">
-          <div style="overflow-x: auto;">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>TX ID</th>
-                  <th>Verdict</th>
-                  <th>Rules</th>
-                  <th>ML Score</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="d in stats.recent_detections" :key="d.content_hash">
-                  <tr class="clickable" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', d.content_hash)">
-                    <td x-text="formatTimestamp(d.scanned_at)" style="white-space: nowrap;"></td>
-                    <td>
-                      <template x-if="txUrl(d.tx_id)">
-                        <a :href="txUrl(d.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(d.tx_id, 20)" :title="d.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'" @click.stop></a>
-                      </template>
-                      <template x-if="!txUrl(d.tx_id)">
-                        <span class="mono" x-text="truncateId(d.tx_id, 20)"></span>
-                      </template>
-                    </td>
-                    <td><span :class="badgeClass(d.verdict)" x-text="d.verdict"></span></td>
-                    <td>
-                      <template x-for="r in parseRules(d.matched_rules)">
-                        <span class="pill" x-text="r"></span>
-                      </template>
-                    </td>
-                    <td>
-                      <span x-text="d.ml_score !== null ? d.ml_score.toFixed(3) : '\u2014'"></span>
-                      <template x-if="d.ml_score !== null">
-                        <span class="score-bar">
-                          <span class="score-bar-fill" :style="'width: ' + Math.min(d.ml_score * 100, 100) + '%; background: ' + scoreColor(d.ml_score)"></span>
-                        </span>
-                      </template>
-                    </td>
-                    <td>
-                      <template x-if="d.admin_status === 'confirmed_malicious'"><span style="color: var(--color-red); font-weight: 600; font-size: 0.8rem;">Confirmed</span></template>
-                      <template x-if="d.admin_status === 'confirmed_clean'"><span style="color: var(--color-green); font-weight: 600; font-size: 0.8rem;">Dismissed</span></template>
-                      <template x-if="!d.admin_status"><span style="color: var(--color-amber); font-weight: 600; font-size: 0.8rem;">Pending</span></template>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
         </template>
       </div>
     </div>

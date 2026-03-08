@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ar.io Content Scanner</title>
+  <link rel="icon" href="/static/admin/favicon.ico" sizes="16x16 32x32">
+  <link rel="icon" type="image/png" href="/static/admin/logo-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/static/admin/apple-touch-icon.png">
+  <meta property="og:title" content="ar.io Content Scanner">
+  <meta property="og:description" content="Content moderation dashboard for ar.io gateways — detect and block phishing on Arweave.">
+  <meta property="og:image" content="/static/admin/logo.png">
+  <meta property="og:type" content="website">
   <style>[x-cloak] { display: none !important; }</style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,7 +32,8 @@
   <!-- Login Screen -->
   <div x-data="{ key: '', logging: false }" x-show="!$store.auth.authenticated" class="login-container">
     <div class="login-card">
-      <h1 class="font-display" style="font-size: 1.5rem; text-align: center; color: var(--color-black);">ar.io Content Scanner</h1>
+      <img src="/static/admin/logo.png" alt="ar.io Content Scanner" style="height: 80px; display: block; margin: 0 auto 16px; border-radius: 16px;">
+      <h1 class="font-display" style="font-size: 1.5rem; text-align: center; color: var(--color-black);">Content Scanner</h1>
       <p style="color: var(--color-gray); text-align: center; margin: 12px 0 24px;">Admin Dashboard</p>
 
       <template x-if="$store.auth.error">
@@ -50,7 +58,7 @@
     <!-- Header -->
     <div class="header">
       <div class="header-brand">
-        <span class="font-display" style="font-size: 1.1rem;">ar.io</span>
+        <img src="https://ar.io/brand/ario-full-white.svg" alt="ar.io" style="height: 24px;">
         <span style="opacity: 0.3;">|</span>
         <span style="font-weight: 500; font-size: 0.9rem;">Content Scanner</span>
       </div>

@@ -2,7 +2,6 @@
 <div x-data="reviewTab" x-init="init()" @close-modal.window="closeModal(); confirmDialog.show = false;" @search-review.window="searchQuery = $event.detail; statusFilter = 'all'; page = 1; load()">
   <div class="section-header">
     <h2>Review Queue</h2>
-    <p>Content flagged as malicious or suspicious by the detection engine. <strong>Confirm</strong> to mark as a true positive (blocks content in enforce mode). <strong>Dismiss</strong> to mark as a false positive (content will never be re-flagged). All decisions are used as ground truth for ML model retraining.</p>
   </div>
 
   <template x-if="error">
