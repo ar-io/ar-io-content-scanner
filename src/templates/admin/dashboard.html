@@ -136,7 +136,8 @@
             <div style="color: var(--color-gray);">Gateway Domain</div>
             <div style="font-weight: 600;">
               <span x-show="stats.safe_browsing.domain_flagged" style="color: var(--color-red);">FLAGGED</span>
-              <span x-show="!stats.safe_browsing.domain_flagged" style="color: var(--color-green);">Clean</span>
+              <span x-show="!stats.safe_browsing.domain_flagged && stats.safe_browsing.checks > 0" style="color: var(--color-green);">Clean</span>
+              <span x-show="!stats.safe_browsing.domain_flagged && stats.safe_browsing.checks === 0" style="color: var(--color-gray);">Pending first check...</span>
             </div>
             <div style="color: var(--color-gray);">API Checks</div>
             <div style="font-weight: 600;" x-text="stats.safe_browsing.checks"></div>

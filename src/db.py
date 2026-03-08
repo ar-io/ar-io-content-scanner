@@ -457,6 +457,7 @@ class ScannerDB:
         verdict_filter: str = "all",
         source_filter: str = "all",
         period: str = "all",
+        sort: str = "newest",
         page: int = 1,
         per_page: int = 25,
     ) -> tuple[list[dict], int]:
@@ -490,6 +491,12 @@ class ScannerDB:
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
+        order = "v.scanned_at DESC"
+        if sort == "oldest":
+            order = "v.scanned_at ASC"
+        elif sort == "ml_score_desc":
+            order = "v.ml_score DESC"
+
         count_row = self.conn.execute(
             f"SELECT COUNT(*) FROM scan_verdicts v "
             f"LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
@@ -506,7 +513,7 @@ class ScannerDB:
             f"FROM scan_verdicts v "
             f"LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
             f"{where} "
-            f"ORDER BY v.scanned_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY {order} LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
 

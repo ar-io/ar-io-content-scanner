@@ -88,6 +88,7 @@ def build_admin_router(app_state) -> APIRouter:
                 "checks": data.get("safe_browsing_checks", 0),
                 "flagged": data.get("safe_browsing_flagged", 0),
                 "escalations": data.get("safe_browsing_escalations", 0),
+                "errors": data.get("safe_browsing_errors", 0),
                 "check_interval": settings.safe_browsing_check_interval,
                 "stats": db.get_safe_browsing_stats(),
             },
@@ -307,6 +308,7 @@ def build_admin_router(app_state) -> APIRouter:
         verdict: str = Query("all"),
         source: str = Query("all"),
         period: str = Query("all"),
+        sort: str = Query("newest"),
         page: int = Query(1, ge=1),
         per_page: int = Query(25, ge=1, le=100),
         _key: str = Depends(auth),
@@ -317,6 +319,7 @@ def build_admin_router(app_state) -> APIRouter:
             verdict_filter=verdict,
             source_filter=source,
             period=period,
+            sort=sort,
             page=page,
             per_page=per_page,
         )

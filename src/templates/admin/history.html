@@ -15,44 +15,46 @@
   <!-- Search & Filters -->
   <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
     <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-      <!-- Search -->
-      <div style="position: relative; flex: 1; min-width: 200px;">
+      <div style="position: relative; flex: 1; min-width: 200px; max-width: 360px;">
         <input type="text" x-model="query" @input="onSearch()" placeholder="Search by TX ID or content hash..."
           style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box;">
       </div>
-
-      <!-- Export -->
       <button class="btn btn-outline btn-sm" @click="exportCsv()">Export CSV</button>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: var(--color-gray);"><span x-text="total.toLocaleString()"></span> items</span>
+        <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
+      </div>
     </div>
 
-    <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap; margin-top: 12px;">
-      <!-- Verdict filter -->
-      <div style="display: flex; gap: 4px; align-items: center;">
-        <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Verdict:</span>
+    <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 12px;">
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Verdict:</span>
         <template x-for="v in ['all','clean','suspicious','malicious']">
           <button class="filter-btn" :class="{ active: verdictFilter === v }" @click="setFilter('verdictFilter', v)" x-text="v" style="text-transform: capitalize;"></button>
         </template>
       </div>
 
-      <!-- Source filter -->
-      <div style="display: flex; gap: 4px; align-items: center;">
-        <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Source:</span>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Source:</span>
         <template x-for="s in ['all','webhook','backfill']">
           <button class="filter-btn" :class="{ active: sourceFilter === s }" @click="setFilter('sourceFilter', s)" x-text="s" style="text-transform: capitalize;"></button>
         </template>
       </div>
 
-      <!-- Period filter -->
-      <div style="display: flex; gap: 4px; align-items: center;">
-        <span style="font-size: 0.75rem; color: var(--color-gray); font-weight: 600;">Period:</span>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Period:</span>
         <template x-for="p in ['24h','7d','30d','all']">
           <button class="filter-btn" :class="{ active: period === p }" @click="setFilter('period', p)" x-text="p"></button>
         </template>
       </div>
 
-      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 0.8rem; color: var(--color-gray);"><span x-text="total.toLocaleString()"></span> results</span>
-        <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Sort:</span>
+        <select @change="setFilter('sort', $event.target.value)" style="font-size: 0.8rem; padding: 4px 8px; border: 1px solid var(--color-gray-light); border-radius: 6px; font-family: inherit;">
+          <option value="newest" :selected="sort === 'newest'">Newest First</option>
+          <option value="oldest" :selected="sort === 'oldest'">Oldest First</option>
+          <option value="ml_score_desc" :selected="sort === 'ml_score_desc'">Highest ML Score</option>
+        </select>
       </div>
     </div>
   </div>
@@ -104,6 +106,11 @@
               </td>
               <td>
                 <span x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '\u2014'"></span>
+                <template x-if="item.ml_score !== null">
+                  <span class="score-bar">
+                    <span class="score-bar-fill" :style="'width: ' + Math.min(item.ml_score * 100, 100) + '%; background: ' + scoreColor(item.ml_score)"></span>
+                  </span>
+                </template>
               </td>
               <td>
                 <span style="font-size: 0.8rem;" x-text="getSource(item)"></span>

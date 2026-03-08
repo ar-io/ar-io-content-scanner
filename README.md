@@ -94,6 +94,9 @@ Rule verdict     ML score       Final verdict
 MALICIOUS        any            MALICIOUS (auto-block in enforce mode)
 CLEAN            >= 0.95        SUSPICIOUS (log only)
 CLEAN            < 0.95         CLEAN
+
+Post-scan (if SAFE_BROWSING_API_KEY set):
+SUSPICIOUS + Google Safe Browsing flags URL → escalated to MALICIOUS
 ```
 
 ### Why This Won't Flag Legitimate DApps
@@ -135,14 +138,16 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `VERDICT_FEED_TRUST_MODE` | No | `malicious_only` | `malicious_only` or `all` |
 | `VERDICT_FEED_ON_DEMAND` | No | `true` | Check peers before scanning locally |
 | `VERDICT_FEED_REQUEST_TIMEOUT_MS` | No | `5000` | Timeout for peer API requests |
+| `SAFE_BROWSING_API_KEY` | No | -- | Google Safe Browsing API key (enables SB integration) |
+| `SAFE_BROWSING_CHECK_INTERVAL` | No | `300` | Seconds between periodic domain + URL monitoring (min 60) |
 
 ## Admin Dashboard
 
 Access the admin dashboard at `http://localhost:3100/admin`. Log in with your `SCANNER_ADMIN_KEY`.
 
 The dashboard provides:
-- **Dashboard** — real-time stats, system health, backfill status, recent detections
-- **Review Queue** — confirm or dismiss flagged content with screenshot previews of flagged pages
+- **Dashboard** — real-time stats, system health, backfill status, Google Safe Browsing status, recent detections
+- **Review Queue** — confirm or dismiss flagged content with screenshot previews and Safe Browsing indicators
 - **Scan History** — searchable, filterable log of all scans with CSV export
 - **Settings** — current configuration, rule status, database stats, training data export
 
@@ -212,6 +217,36 @@ VERDICT_FEED_URLS=http://scanner-a:3100,http://scanner-c:3100
 - **Deduplication**: Local verdicts always take priority. If content was already scanned locally, peer verdicts are ignored.
 - **Admin overrides**: Locally dismissed content is never reimported from peers.
 - **Blocking**: Imported MALICIOUS verdicts trigger auto-blocking in enforce mode, just like local detections.
+
+## Google Safe Browsing
+
+Optional integration with Google's Safe Browsing Lookup API v4 provides a second independent signal for threat detection and monitors your gateway domain for blocklist status.
+
+### Getting a Safe Browsing API Key
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select an existing one)
+3. Navigate to **APIs & Services > Library**, search for "Safe Browsing API", and click **Enable**
+4. Go to **APIs & Services > Credentials**, click **Create Credentials > API key**
+5. (Recommended) Restrict the key to the **Safe Browsing API** only under **API restrictions**
+6. Add the key to your `.env`:
+
+```bash
+SAFE_BROWSING_API_KEY=your-google-api-key
+SAFE_BROWSING_CHECK_INTERVAL=300  # optional, default 5 minutes
+```
+
+The Safe Browsing API is free for non-commercial use (up to 10,000 requests/day).
+
+### What It Does
+
+- **On-verdict check**: When a scan produces a MALICIOUS or SUSPICIOUS verdict, the URL is checked against Google Safe Browsing before blocking. If SUSPICIOUS and Google also flags it, the verdict is escalated to MALICIOUS (two independent signals).
+- **Periodic monitoring**: A background loop checks your gateway domain + recent malicious/suspicious URLs against Google every `SAFE_BROWSING_CHECK_INTERVAL` seconds. If your gateway domain is flagged, a warning banner appears on the admin dashboard.
+- **Fail-open**: API errors never affect scanning or blocking. If Google is unreachable, verdicts proceed unchanged.
+
+### Dashboard Integration
+
+The admin dashboard shows Safe Browsing status including domain health, API check counts, flagged URLs, and escalation counts. The review queue shows a "Google Safe Browsing" badge on items flagged by Google.
 
 ## Docker Images
 

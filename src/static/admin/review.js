@@ -32,6 +32,7 @@ document.addEventListener('alpine:init', function () {
       showModal: false,
       detail: null,
       detailSource: '',
+      detailMeta: null,
       detailScreenshotUrl: '',
       detailLoading: false,
 
@@ -70,6 +71,12 @@ document.addEventListener('alpine:init', function () {
 
       async setPage(n) {
         this.page = Math.max(1, Math.min(n, this.pages));
+        await this.load();
+      },
+
+      async setPerPage(n) {
+        this.perPage = n;
+        this.page = 1;
         await this.load();
       },
 
@@ -170,10 +177,74 @@ document.addEventListener('alpine:init', function () {
       },
 
       // --- Detail modal ---
+      parseHtmlMeta(html) {
+        try {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          var meta = {};
+
+          // Title
+          var title = doc.querySelector('title');
+          if (title && title.textContent.trim()) meta.title = title.textContent.trim();
+
+          // Meta tags
+          var descEl = doc.querySelector('meta[name="description"]') || doc.querySelector('meta[property="og:description"]');
+          if (descEl) meta.description = descEl.getAttribute('content');
+
+          var ogTitle = doc.querySelector('meta[property="og:title"]');
+          if (ogTitle) meta.ogTitle = ogTitle.getAttribute('content');
+
+          var ogImage = doc.querySelector('meta[property="og:image"]');
+          if (ogImage) meta.ogImage = ogImage.getAttribute('content');
+
+          var keywords = doc.querySelector('meta[name="keywords"]');
+          if (keywords) meta.keywords = keywords.getAttribute('content');
+
+          var canonical = doc.querySelector('link[rel="canonical"]');
+          if (canonical) meta.canonical = canonical.getAttribute('href');
+
+          var favicon = doc.querySelector('link[rel="icon"]') || doc.querySelector('link[rel="shortcut icon"]');
+          if (favicon) meta.favicon = favicon.getAttribute('href');
+
+          // Form actions — key phishing signal
+          var forms = doc.querySelectorAll('form[action]');
+          var actions = [];
+          forms.forEach(function (f) {
+            var action = f.getAttribute('action');
+            if (action && action !== '#' && action !== '') actions.push(action);
+          });
+          if (actions.length) meta.formActions = actions;
+
+          // External script sources
+          var scripts = doc.querySelectorAll('script[src]');
+          var extScripts = [];
+          scripts.forEach(function (s) {
+            var src = s.getAttribute('src');
+            if (src && /^https?:\/\//.test(src)) extScripts.push(src);
+          });
+          if (extScripts.length) meta.externalScripts = extScripts;
+
+          // Input field counts — useful context
+          var passwordInputs = doc.querySelectorAll('input[type="password"]').length;
+          var textInputs = doc.querySelectorAll('input[type="text"], input:not([type])').length;
+          if (passwordInputs || textInputs) {
+            meta.inputs = {};
+            if (textInputs) meta.inputs.text = textInputs;
+            if (passwordInputs) meta.inputs.password = passwordInputs;
+          }
+
+          // Check if anything was found
+          if (Object.keys(meta).length === 0) return null;
+          return meta;
+        } catch (e) {
+          return null;
+        }
+      },
+
       async openDetail(hash) {
         this.detailLoading = true;
         this.showModal = true;
         this.detailSource = '';
+        this.detailMeta = null;
         this.detailScreenshotUrl = '';
         try {
           this.detail = await apiJson('/api/admin/review/' + hash);
@@ -184,6 +255,7 @@ document.addEventListener('alpine:init', function () {
             api('/api/admin/preview/' + this.detail.tx_id).then(function (resp) {
               return resp.text();
             }).then(function (text) {
+              self.detailMeta = self.parseHtmlMeta(text);
               self.detailSource = text.substring(0, 5000);
             }).catch(function () {})
           );
@@ -208,6 +280,7 @@ document.addEventListener('alpine:init', function () {
         this.showModal = false;
         this.detail = null;
         this.detailSource = '';
+        this.detailMeta = null;
         if (this.detailScreenshotUrl) {
           URL.revokeObjectURL(this.detailScreenshotUrl);
           this.detailScreenshotUrl = '';

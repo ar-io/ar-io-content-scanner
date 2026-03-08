@@ -15,12 +15,17 @@
   <!-- Filters -->
   <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
     <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-      <!-- Search -->
       <div style="position: relative; flex: 1; min-width: 200px; max-width: 360px;">
         <input type="text" x-model="searchQuery" @input="onSearch()" placeholder="Search by TX ID or content hash..."
           style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box;">
       </div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: var(--color-gray);"><span x-text="total"></span> items</span>
+        <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
+      </div>
+    </div>
 
+    <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 12px;">
       <div style="display: flex; gap: 6px; align-items: center;">
         <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Verdict:</span>
         <button class="filter-btn" :class="{ active: verdictFilter === 'all' }" @click="setFilter('verdictFilter', 'all')">All</button>
@@ -41,10 +46,6 @@
           <option value="oldest" :selected="sort === 'oldest'">Oldest First</option>
           <option value="ml_score_desc" :selected="sort === 'ml_score_desc'">Highest ML Score</option>
         </select>
-      </div>
-      <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 0.8rem; color: var(--color-gray);"><span x-text="total"></span> items</span>
-        <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       </div>
     </div>
   </div>
@@ -72,60 +73,65 @@
           <span style="font-size: 0.8rem; color: var(--color-gray);" x-text="formatTimestamp(item.scanned_at)"></span>
         </div>
 
-        <div style="margin-bottom: 8px;">
-          <span style="font-size: 0.8rem; color: var(--color-gray);">TX ID: </span>
-          <template x-if="txUrl(item.tx_id)">
-            <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="item.tx_id" style="word-break: break-all; color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
-          </template>
-          <template x-if="!txUrl(item.tx_id)">
-            <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
-          </template>
-          <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
-            <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-            <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </button>
-        </div>
-        <div style="margin-bottom: 12px;">
-          <span style="font-size: 0.75rem; color: var(--color-gray);">Content Hash: </span>
-          <span class="mono" style="font-size: 0.75rem; color: var(--color-gray);" x-text="item.content_hash"></span>
-          <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.content_hash); copied = true; setTimeout(() => copied = false, 1500)" title="Copy content hash">
-            <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-            <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </button>
-        </div>
+        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+          <!-- Left: info -->
+          <div style="flex: 1; min-width: 0;">
+            <div style="margin-bottom: 8px;">
+              <span style="font-size: 0.8rem; color: var(--color-gray);">TX ID: </span>
+              <template x-if="txUrl(item.tx_id)">
+                <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="item.tx_id" style="word-break: break-all; color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
+              </template>
+              <template x-if="!txUrl(item.tx_id)">
+                <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
+              </template>
+              <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+                <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
+            <div style="margin-bottom: 12px;">
+              <span style="font-size: 0.75rem; color: var(--color-gray);">Content Hash: </span>
+              <span class="mono" style="font-size: 0.75rem; color: var(--color-gray);" x-text="item.content_hash"></span>
+              <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.content_hash); copied = true; setTimeout(() => copied = false, 1500)" title="Copy content hash">
+                <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+            </div>
 
-        <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
-          <div>
-            <span style="font-size: 0.8rem; color: var(--color-gray);">Rules: </span>
-            <template x-for="r in parseRules(item.matched_rules)">
-              <span class="pill" x-text="r"></span>
-            </template>
-            <span x-show="parseRules(item.matched_rules).length === 0" style="font-size: 0.8rem; color: var(--color-gray);">ML detection only</span>
+            <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+              <div>
+                <span style="font-size: 0.8rem; color: var(--color-gray);">Rules: </span>
+                <template x-for="r in parseRules(item.matched_rules)">
+                  <span class="pill" x-text="r"></span>
+                </template>
+                <span x-show="parseRules(item.matched_rules).length === 0" style="font-size: 0.8rem; color: var(--color-gray);">ML detection only</span>
+              </div>
+              <template x-if="item.safe_browsing_flagged === true">
+                <div>
+                  <span class="pill" style="background: var(--color-red); color: white;">Google Safe Browsing</span>
+                </div>
+              </template>
+              <div>
+                <span style="font-size: 0.8rem; color: var(--color-gray);">ML Score: </span>
+                <span style="font-size: 0.85rem; font-weight: 600;" x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '\u2014'"></span>
+                <template x-if="item.ml_score !== null">
+                  <span class="score-bar">
+                    <span class="score-bar-fill" :style="'width: ' + Math.min(item.ml_score * 100, 100) + '%; background: ' + scoreColor(item.ml_score)"></span>
+                  </span>
+                </template>
+              </div>
+            </div>
           </div>
-          <template x-if="item.safe_browsing_flagged === true">
-            <div>
-              <span class="pill" style="background: var(--color-red); color: white;">Google Safe Browsing</span>
+
+          <!-- Right: screenshot thumbnail -->
+          <template x-if="screenshotUrls[item.content_hash]">
+            <div style="flex-shrink: 0;">
+              <img :src="screenshotUrls[item.content_hash]" alt="Page screenshot"
+                @click="openDetail(item.content_hash)"
+                style="width: 200px; max-height: 140px; border-radius: 8px; border: 1px solid var(--color-gray-light); cursor: pointer; object-fit: cover; object-position: top;">
             </div>
           </template>
-          <div>
-            <span style="font-size: 0.8rem; color: var(--color-gray);">ML Score: </span>
-            <span style="font-size: 0.85rem; font-weight: 600;" x-text="item.ml_score !== null ? item.ml_score.toFixed(3) : '\u2014'"></span>
-            <template x-if="item.ml_score !== null">
-              <span class="score-bar">
-                <span class="score-bar-fill" :style="'width: ' + Math.min(item.ml_score * 100, 100) + '%; background: ' + scoreColor(item.ml_score)"></span>
-              </span>
-            </template>
-          </div>
         </div>
-
-        <!-- Screenshot thumbnail -->
-        <template x-if="screenshotUrls[item.content_hash]">
-          <div style="margin-bottom: 12px;">
-            <img :src="screenshotUrls[item.content_hash]" alt="Page screenshot"
-              @click="openDetail(item.content_hash)"
-              style="max-width: 100%; max-height: 180px; border-radius: 8px; border: 1px solid var(--color-gray-light); cursor: pointer; object-fit: cover; object-position: top;">
-          </div>
-        </template>
 
         <!-- Actions -->
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -160,10 +166,15 @@
   </div>
 
   <!-- Pagination -->
-  <div x-show="pages > 1" class="pagination">
+  <div x-show="!loading && pages > 1" class="pagination">
     <button class="btn btn-sm btn-outline" @click="setPage(page - 1)" :disabled="page <= 1">Prev</button>
     <span style="font-size: 0.85rem; color: var(--color-gray);">Page <span x-text="page"></span> of <span x-text="pages"></span></span>
     <button class="btn btn-sm btn-outline" @click="setPage(page + 1)" :disabled="page >= pages">Next</button>
+
+    <span style="margin-left: 16px; font-size: 0.8rem; color: var(--color-gray);">Per page:</span>
+    <template x-for="n in [25, 50, 100]">
+      <button class="filter-btn" :class="{ active: perPage === n }" @click="setPerPage(n)" x-text="n" style="padding: 2px 8px; font-size: 0.75rem;"></button>
+    </template>
   </div>
 
   <!-- Confirmation Dialog -->
@@ -282,6 +293,60 @@
               <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0 0 8px;">Screenshot</h4>
               <img :src="detailScreenshotUrl" alt="Page screenshot"
                 style="max-width: 100%; border-radius: 8px; border: 1px solid var(--color-gray-light);">
+            </div>
+          </template>
+
+          <!-- Parsed HTML metadata -->
+          <template x-if="detailMeta">
+            <div style="margin-bottom: 20px;">
+              <h4 style="font-size: 0.9rem; font-weight: 700; margin: 0 0 10px;">Page Metadata</h4>
+              <div style="background: var(--color-bg); border: 1px solid var(--color-gray-light); border-radius: 8px; padding: 14px 18px; font-size: 0.85rem; line-height: 1.7;">
+                <template x-if="detailMeta.title">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">Title: </span><span x-text="detailMeta.title"></span></div>
+                </template>
+                <template x-if="detailMeta.ogTitle && detailMeta.ogTitle !== detailMeta.title">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">OG Title: </span><span x-text="detailMeta.ogTitle"></span></div>
+                </template>
+                <template x-if="detailMeta.description">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">Description: </span><span x-text="detailMeta.description"></span></div>
+                </template>
+                <template x-if="detailMeta.keywords">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">Keywords: </span><span x-text="detailMeta.keywords"></span></div>
+                </template>
+                <template x-if="detailMeta.canonical">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">Canonical URL: </span><span class="mono" style="word-break: break-all;" x-text="detailMeta.canonical"></span></div>
+                </template>
+                <template x-if="detailMeta.ogImage">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">OG Image: </span><span class="mono" style="word-break: break-all;" x-text="detailMeta.ogImage"></span></div>
+                </template>
+                <template x-if="detailMeta.favicon">
+                  <div><span style="color: var(--color-gray); font-weight: 600;">Favicon: </span><span class="mono" style="word-break: break-all;" x-text="detailMeta.favicon"></span></div>
+                </template>
+                <template x-if="detailMeta.inputs">
+                  <div>
+                    <span style="color: var(--color-gray); font-weight: 600;">Input Fields: </span>
+                    <span x-show="detailMeta.inputs.text" x-text="detailMeta.inputs.text + ' text'"></span>
+                    <span x-show="detailMeta.inputs.text && detailMeta.inputs.password">, </span>
+                    <span x-show="detailMeta.inputs.password" style="color: var(--color-red); font-weight: 600;" x-text="detailMeta.inputs.password + ' password'"></span>
+                  </div>
+                </template>
+                <template x-if="detailMeta.formActions">
+                  <div>
+                    <span style="color: var(--color-red); font-weight: 600;">Form Actions: </span>
+                    <template x-for="action in detailMeta.formActions">
+                      <div style="margin-left: 16px;"><span class="mono" style="word-break: break-all; color: var(--color-red);" x-text="action"></span></div>
+                    </template>
+                  </div>
+                </template>
+                <template x-if="detailMeta.externalScripts">
+                  <div>
+                    <span style="color: var(--color-amber); font-weight: 600;">External Scripts: </span>
+                    <template x-for="src in detailMeta.externalScripts">
+                      <div style="margin-left: 16px;"><span class="mono" style="word-break: break-all;" x-text="src"></span></div>
+                    </template>
+                  </div>
+                </template>
+              </div>
             </div>
           </template>
 

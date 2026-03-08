@@ -72,8 +72,8 @@ Access the admin dashboard at `http://localhost:3100/admin`. Log in with your `S
 
 The dashboard provides:
 
-- **Dashboard** — real-time stats, system health, backfill status, recent detections with 30-second auto-refresh
-- **Review Queue** — confirm or dismiss flagged content with screenshot previews of flagged pages
+- **Dashboard** — real-time stats, system health, backfill status, Google Safe Browsing status, recent detections with 30-second auto-refresh
+- **Review Queue** — confirm or dismiss flagged content with screenshot previews and Safe Browsing indicators
 - **Scan History** — searchable, filterable log of all scans with CSV export
 - **Settings** — current configuration, rule status, database stats, training data export
 
@@ -128,7 +128,12 @@ Returns:
   "feed_verdicts_exported": 156,
   "feed_poll_errors": 0,
   "feed_on_demand_hits": 18,
-  "feed_on_demand_misses": 95
+  "feed_on_demand_misses": 95,
+  "safe_browsing_checks": 120,
+  "safe_browsing_flagged": 3,
+  "safe_browsing_escalations": 1,
+  "safe_browsing_errors": 0,
+  "safe_browsing_domain_flagged": false
 }
 ```
 
@@ -138,6 +143,9 @@ Key metrics to watch:
 - **scans_by_verdict.suspicious** > 0: ML model flagged content the rules didn't catch. Review logs for these transaction IDs.
 - **feed_poll_errors** > 0: Can't reach a peer scanner. Check network and `VERDICT_API_KEY`.
 - **feed_on_demand_hits** growing: Peer lookups are saving local scan work.
+- **safe_browsing_domain_flagged** = true: Your gateway domain is on Google's blocklist. Users will see browser warnings. Review and block flagged content immediately.
+- **safe_browsing_escalations** > 0: SUSPICIOUS verdicts were escalated to MALICIOUS because Google also flagged them.
+- **safe_browsing_errors** > 0: API connectivity issues. Check your `SAFE_BROWSING_API_KEY` and network.
 
 ### Logs
 
@@ -210,6 +218,13 @@ Example log entry for a blocked phishing page:
 | `VERDICT_FEED_ON_DEMAND` | `true` | Check peers before scanning locally |
 | `VERDICT_FEED_REQUEST_TIMEOUT_MS` | `5000` | Timeout for peer API requests in ms |
 
+### Google Safe Browsing
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SAFE_BROWSING_API_KEY` | *(none)* | Google Safe Browsing API key (enables the integration) |
+| `SAFE_BROWSING_CHECK_INTERVAL` | `300` | Seconds between periodic domain + URL monitoring (min 60) |
+
 ### Rule Toggles
 
 All rules are enabled by default. Disable individual rules if needed:
@@ -263,7 +278,7 @@ SCANNER_WORKERS=4
 
 Content Scanner stores its SQLite database at `DB_PATH` (default: `/app/data/scanner.db`). This contains:
 
-- **Verdict cache** (`scan_verdicts`): Scan results keyed by content hash. Since Arweave content is immutable, these verdicts are permanent.
+- **Verdict cache** (`scan_verdicts`): Scan results keyed by content hash, including Google Safe Browsing status. Since Arweave content is immutable, these verdicts are permanent.
 - **Scan queue** (`scan_queue`): Pending webhook events awaiting processing. Items older than 1 hour are automatically purged.
 - **Admin overrides** (`admin_overrides`): Operator confirm/dismiss decisions from the admin dashboard. These persist across restarts and take priority over re-scans.
 
@@ -406,6 +421,67 @@ Check trust mode — in `malicious_only` mode (default), CLEAN verdicts from pee
 
 **Imported verdicts not blocking:**
 Imported MALICIOUS verdicts only trigger blocks in `enforce` mode. Check `SCANNER_MODE`.
+
+## Google Safe Browsing Integration
+
+Optional integration with Google's Safe Browsing Lookup API v4 provides two capabilities:
+
+1. **On-verdict checks**: After a scan produces a MALICIOUS or SUSPICIOUS verdict, the URL is checked against Google Safe Browsing. If SUSPICIOUS and Google also flags it, the verdict is escalated to MALICIOUS (two independent signals — consistent with the project's conjunctive detection philosophy).
+2. **Periodic domain monitoring**: A background loop checks your gateway domain + recent malicious/suspicious URLs against Google every `SAFE_BROWSING_CHECK_INTERVAL` seconds (default: 300). This alerts you if your gateway domain gets added to Google's blocklist.
+
+### Getting a Safe Browsing API Key
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select an existing one)
+3. Navigate to **APIs & Services > Library**, search for "Safe Browsing API", and click **Enable**
+4. Go to **APIs & Services > Credentials**, click **Create Credentials > API key**
+5. (Recommended) Restrict the key to the **Safe Browsing API** only under **API restrictions**
+6. Add the key to your `.env`:
+
+```bash
+SAFE_BROWSING_API_KEY=your-google-api-key
+SAFE_BROWSING_CHECK_INTERVAL=300  # optional, default 5 minutes
+```
+
+The Safe Browsing API is free for non-commercial use (up to 10,000 requests/day).
+
+`GATEWAY_PUBLIC_URL` must be set for periodic monitoring to work — without it, the monitor loop logs a warning and exits.
+
+### Fail-Open Design
+
+Google Safe Browsing API errors **never** affect scanning or blocking. If the API is unreachable, rate-limited, or returns an error, the scanner proceeds with its own verdict unchanged. This ensures the scanner remains fully functional even if the external API is down.
+
+### Dashboard
+
+The admin dashboard shows:
+- A red warning banner if your gateway domain is flagged by Google Safe Browsing
+- A **Google Safe Browsing** health card on the Dashboard tab with domain status, API check count, URLs flagged, escalations, and check interval
+- A "Google Safe Browsing" badge on review items that Google has flagged
+- Safe Browsing status in the detail view for individual items
+
+### Monitoring
+
+```bash
+# Check Safe Browsing metrics
+curl http://localhost:3100/metrics | jq '{safe_browsing_checks, safe_browsing_flagged, safe_browsing_escalations, safe_browsing_errors, safe_browsing_domain_flagged}'
+
+# Watch Safe Browsing logs
+docker compose logs content-scanner | grep safe_browsing
+```
+
+### Troubleshooting
+
+**Dashboard shows "Pending first check...":**
+The monitor loop waits 15 seconds after startup before the first check. This is normal.
+
+**Monitor loop disabled warning in logs:**
+Set `GATEWAY_PUBLIC_URL` to your gateway's public URL. Without it, the periodic monitor cannot construct URLs to check.
+
+**`safe_browsing_errors` increasing:**
+Check your API key is valid and has the Safe Browsing API enabled. Check network connectivity to `safebrowsing.googleapis.com`. Note that errors are fail-open and do not affect scanning.
+
+**Gateway domain flagged:**
+Review the admin dashboard's review queue for malicious content. Confirm and block any phishing pages. After blocking, request a review via [Google Search Console](https://search.google.com/search-console).
 
 ## Sidecar Downtime
 

@@ -12,6 +12,7 @@ document.addEventListener('alpine:init', function () {
       verdictFilter: 'all',
       sourceFilter: 'all',
       period: 'all',
+      sort: 'newest',
       loading: true,
       error: '',
       _debounce: null,
@@ -28,6 +29,7 @@ document.addEventListener('alpine:init', function () {
             verdict: this.verdictFilter,
             source: this.sourceFilter,
             period: this.period,
+            sort: this.sort,
             page: this.page,
             per_page: this.perPage
           });
