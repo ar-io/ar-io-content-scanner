@@ -243,6 +243,24 @@ class BackfillScanner:
         logger.info("backfill_sweep_complete", extra=stats)
         self.metrics.record_backfill_sweep(stats)
 
+        # Persist backfill stats to DB so they survive restarts
+        try:
+            prev_scanned = int(self.db.get_state("backfill_files_scanned", "0"))
+            prev_malicious = int(self.db.get_state("backfill_malicious_found", "0"))
+            prev_sweeps = int(self.db.get_state("backfill_sweeps_completed", "0"))
+            self.db.save_state(
+                "backfill_files_scanned",
+                str(prev_scanned + stats["scanned"] + stats["skipped_not_html"]),
+            )
+            self.db.save_state(
+                "backfill_malicious_found",
+                str(prev_malicious + stats["malicious"]),
+            )
+            self.db.save_state("backfill_sweeps_completed", str(prev_sweeps + 1))
+            self.db.save_state("backfill_last_sweep_at", str(int(time.time())))
+        except Exception:
+            logger.warning("backfill_state_persist_failed")
+
         return stats
 
     async def _process_file(

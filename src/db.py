@@ -79,6 +79,12 @@ class ScannerDB:
 
             CREATE INDEX IF NOT EXISTS idx_verdicts_verdict
                 ON scan_verdicts(verdict, scanned_at);
+
+            CREATE TABLE IF NOT EXISTS scanner_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
             """
         )
         self._conn.commit()
@@ -478,6 +484,22 @@ class ScannerDB:
             for r in rows
         ]
         return items, total
+
+    # --- Key-value state persistence ---
+
+    def save_state(self, key: str, value: str) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO scanner_state (key, value, updated_at) "
+            "VALUES (?, ?, ?)",
+            (key, value, int(time.time())),
+        )
+        self.conn.commit()
+
+    def get_state(self, key: str, default: str = "0") -> str:
+        row = self.conn.execute(
+            "SELECT value FROM scanner_state WHERE key = ?", (key,)
+        ).fetchone()
+        return row[0] if row else default
 
     def get_dashboard_counts(self) -> dict:
         """Persistent counts for the dashboard stat cards."""

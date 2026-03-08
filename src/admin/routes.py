@@ -69,10 +69,10 @@ def build_admin_router(app_state) -> APIRouter:
             "last_webhook_at": data["last_webhook_at"],
             "backfill": {
                 "enabled": settings.backfill_enabled,
-                "files_scanned": data["backfill_files_scanned"],
-                "malicious_found": data["backfill_malicious_found"],
-                "sweeps_completed": data["backfill_sweeps_completed"],
-                "last_sweep_at": data["backfill_last_sweep_at"],
+                "files_scanned": int(db.get_state("backfill_files_scanned", "0")),
+                "malicious_found": int(db.get_state("backfill_malicious_found", "0")),
+                "sweeps_completed": int(db.get_state("backfill_sweeps_completed", "0")),
+                "last_sweep_at": int(db.get_state("backfill_last_sweep_at", "0")) or None,
             },
             "recent_detections": db.get_recent_detections(limit=10),
         }
