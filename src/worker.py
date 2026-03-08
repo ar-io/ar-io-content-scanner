@@ -187,10 +187,31 @@ class WorkerPool:
             )
             return
 
+        # Build domain URL variants — Google may flag http vs https differently
+        from urllib.parse import urlparse
+        parsed = urlparse(gateway_url)
+        domain = parsed.hostname or parsed.netloc
+        domain_variants = list(dict.fromkeys([
+            f"https://{domain}/",
+            f"http://{domain}/",
+            f"https://{domain}",
+            f"http://{domain}",
+        ]))
+
+        logger.info(
+            "Safe Browsing monitor started",
+            extra={
+                "domain": domain,
+                "check_interval": self.settings.safe_browsing_check_interval,
+                "domain_variants": len(domain_variants),
+            },
+        )
+
         while self._running:
             try:
-                # Always check the bare gateway domain first
-                urls_to_check: list[str] = [gateway_url + "/"]
+                # Check domain variants first
+                urls_to_check: list[str] = list(domain_variants)
+                num_domain_urls = len(urls_to_check)
 
                 # Batch-check recent malicious verdict URLs
                 all_recent = self.db.get_recent_malicious_urls(limit=50)
@@ -204,23 +225,42 @@ class WorkerPool:
 
                 results = await self.safe_browsing.check_urls(urls_to_check)
 
-                # First result is the gateway domain itself
-                domain_result = results[0]
+                # Check if any domain variant is flagged
+                domain_results = results[:num_domain_urls]
+                domain_flagged = any(r.flagged for r in domain_results)
+                flagged_variants = [
+                    r for r in domain_results if r.flagged
+                ]
+
                 if self.metrics:
                     self.metrics.set_safe_browsing_domain_flagged(
-                        domain_result.flagged
+                        domain_flagged
                     )
-                if domain_result.flagged:
+
+                if domain_flagged:
                     logger.error(
                         "GATEWAY DOMAIN FLAGGED by Google Safe Browsing",
                         extra={
-                            "url": domain_result.url,
-                            "threat_types": domain_result.threat_types,
+                            "domain": domain,
+                            "flagged_urls": [r.url for r in flagged_variants],
+                            "threat_types": [
+                                t for r in flagged_variants
+                                for t in r.threat_types
+                            ],
+                        },
+                    )
+                else:
+                    logger.info(
+                        "safe_browsing_check_complete",
+                        extra={
+                            "domain_flagged": False,
+                            "urls_checked": len(urls_to_check),
+                            "content_urls": len(recent),
                         },
                     )
 
-                # Update per-content SB status (skip domain result)
-                content_results = results[1:]
+                # Update per-content SB status (skip domain results)
+                content_results = results[num_domain_urls:]
                 for item, sb_result in zip(recent, content_results):
                     if self.metrics:
                         self.metrics.record_safe_browsing_check(

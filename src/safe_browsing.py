@@ -69,11 +69,21 @@ class SafeBrowsingClient:
             )
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            detail = ""
+            if hasattr(exc, "response") and exc.response is not None:
+                detail = f" status={exc.response.status_code}"
+                try:
+                    detail += f" body={exc.response.text[:200]}"
+                except Exception:
+                    pass
             logger.warning(
                 "safe_browsing_api_error",
                 exc_info=True,
-                extra={"url_count": len(urls)},
+                extra={
+                    "url_count": len(urls),
+                    "error": str(exc) + detail,
+                },
             )
             return [SafeBrowsingResult(url=u, flagged=False, threat_types=[]) for u in urls]
 
