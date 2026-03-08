@@ -44,6 +44,7 @@
   </div>
 
   <!-- Main Application (x-if ensures tabs only init after auth succeeds) -->
+  <div x-data>
   <template x-if="$store.auth.authenticated">
   <div>
     <!-- Header -->
@@ -98,6 +99,7 @@
     </div>
   </div>
   </template>
+  </div>
 
   <!-- JS -->
   <script src="/static/admin/app.js"></script>
