@@ -16,12 +16,15 @@ from src.scanner import Scanner
 from src.server import build_app
 
 
+_screenshot_tmpdir = tempfile.mkdtemp()
+
 TEST_SETTINGS = Settings(
     gateway_url="http://localhost:3000",
     admin_api_key="test-key",
     scanner_mode="dry-run",
     ml_model_enabled=False,
     db_path=":memory:",
+    screenshot_dir=_screenshot_tmpdir,
 )
 
 
