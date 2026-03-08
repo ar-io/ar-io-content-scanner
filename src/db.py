@@ -385,8 +385,21 @@ class ScannerDB:
         page: int = 1,
         per_page: int = 25,
     ) -> tuple[list[dict], int]:
-        conditions = ["v.verdict IN ('malicious', 'suspicious')"]
+        conditions: list[str] = []
         params: list = []
+
+        if status_filter == "pending":
+            conditions.append("v.verdict IN ('malicious', 'suspicious')")
+            conditions.append("o.content_hash IS NULL")
+        elif status_filter == "confirmed":
+            conditions.append("o.admin_verdict = 'confirmed_malicious'")
+        elif status_filter == "dismissed":
+            conditions.append("o.admin_verdict = 'confirmed_clean'")
+        else:
+            # "all": show flagged items + any with overrides (including dismissed→CLEAN)
+            conditions.append(
+                "(v.verdict IN ('malicious', 'suspicious') OR o.content_hash IS NOT NULL)"
+            )
 
         if query:
             conditions.append(
@@ -398,13 +411,6 @@ class ScannerDB:
         if verdict_filter in ("malicious", "suspicious"):
             conditions.append("v.verdict = ?")
             params.append(verdict_filter)
-
-        if status_filter == "pending":
-            conditions.append("o.content_hash IS NULL")
-        elif status_filter == "confirmed":
-            conditions.append("o.admin_verdict = 'confirmed_malicious'")
-        elif status_filter == "dismissed":
-            conditions.append("o.admin_verdict = 'confirmed_clean'")
 
         where = " AND ".join(conditions)
 
