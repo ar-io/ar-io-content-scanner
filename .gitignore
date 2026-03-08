@@ -9,5 +9,7 @@ build/
 venv/
 *.db
 .env
+.coverage
+.claude/
 naive_bayes_text_model.pkl
 tfidf_vectorizer.pkl

@@ -5,8 +5,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN useradd -m -u 1000 scanner && mkdir -p /app/data && chown scanner:scanner /app/data
+
 COPY xgboost_model.pkl .
 COPY src/ src/
+
+USER scanner
 
 EXPOSE 3100
 
