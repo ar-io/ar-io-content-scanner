@@ -82,9 +82,6 @@ class ScannerDB:
             CREATE INDEX IF NOT EXISTS idx_verdicts_verdict
                 ON scan_verdicts(verdict, scanned_at);
 
-            CREATE INDEX IF NOT EXISTS idx_verdicts_source_scanned
-                ON scan_verdicts(source, scanned_at);
-
             CREATE TABLE IF NOT EXISTS feed_sync_state (
                 peer_url TEXT PRIMARY KEY,
                 last_scanned_at INTEGER NOT NULL DEFAULT 0,
@@ -116,6 +113,11 @@ class ScannerDB:
                 "ALTER TABLE scan_verdicts ADD COLUMN source TEXT NOT NULL DEFAULT 'local'"
             )
             self._conn.commit()
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_verdicts_source_scanned "
+            "ON scan_verdicts(source, scanned_at)"
+        )
+        self._conn.commit()
         if "safe_browsing_flagged" not in columns:
             self._conn.execute(
                 "ALTER TABLE scan_verdicts ADD COLUMN safe_browsing_flagged INTEGER"
