@@ -2,6 +2,7 @@
 
 import json
 import time
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -374,3 +375,145 @@ class TestAdminOverrides:
         assert stats["total_verdicts"] == 2
         assert stats["verdicts_by_type"]["clean"] == 1
         assert stats["verdicts_by_type"]["malicious"] == 1
+
+
+class TestEnforceModeActions:
+    """Test that dismiss/revert trigger unblock/block in enforce mode."""
+
+    @pytest.fixture
+    def enforce_settings(self, tmp_path):
+        return Settings(
+            gateway_url="http://localhost:4000",
+            admin_api_key="gateway-key",
+            scanner_admin_key="test-admin-key",
+            admin_ui_enabled=True,
+            ml_model_enabled=False,
+            db_path=str(tmp_path / "test.db"),
+            scanner_mode="enforce",
+        )
+
+    @pytest.fixture
+    def enforce_db(self, enforce_settings):
+        _db = ScannerDB(enforce_settings.db_path)
+        _db.initialize()
+        return _db
+
+    @pytest.fixture
+    def enforce_app(self, enforce_settings, enforce_db):
+        a = build_app(enforce_settings)
+        a.state.db = enforce_db
+        # Mock gateway to avoid real HTTP calls
+        mock_gw = AsyncMock()
+        mock_gw.block_data = AsyncMock(return_value=True)
+        mock_gw.unblock_data = AsyncMock(return_value=True)
+        a.state.gateway = mock_gw
+        return a
+
+    @pytest.fixture
+    def enforce_client(self, enforce_app):
+        return TestClient(enforce_app)
+
+    def test_dismiss_returns_unblocked_field(self, enforce_client, enforce_db, enforce_app):
+        enforce_db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+        resp = enforce_client.post(
+            "/api/admin/review/h1/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"notes": "false positive"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "unblocked" in data
+        assert data["unblocked"] is True
+        enforce_app.state.gateway.unblock_data.assert_called_once_with("tx1", "h1")
+
+    def test_dismiss_in_dry_run_no_unblock(self, client, db):
+        db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+        resp = client.post(
+            "/api/admin/review/h1/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={},
+        )
+        data = resp.json()
+        assert data["status"] == "dismissed"
+        # dry-run mode should not have unblocked field
+        assert "unblocked" not in data
+
+    def test_bulk_dismiss_returns_unblocked_tx_ids(self, enforce_client, enforce_db, enforce_app):
+        enforce_db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+        enforce_db.save_verdict("h2", "tx2", Verdict.SUSPICIOUS, '[]', 0.97, "0.1.0")
+        resp = enforce_client.post(
+            "/api/admin/bulk/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"hashes": ["h1", "h2"]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "unblocked_tx_ids" in data
+        assert sorted(data["unblocked_tx_ids"]) == ["tx1", "tx2"]
+        assert data["succeeded"] == 2
+
+    def test_revert_dismiss_reblocks_malicious(self, enforce_client, enforce_db, enforce_app):
+        """Reverting a dismiss on a MALICIOUS item should re-block it."""
+        enforce_db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+        # Dismiss first
+        enforce_client.post(
+            "/api/admin/review/h1/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"notes": "false positive"},
+        )
+        # Reset mock call tracking after dismiss
+        enforce_app.state.gateway.reset_mock()
+        # Now revert the dismiss
+        resp = enforce_client.post(
+            "/api/admin/review/h1/revert",
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "reverted"
+        assert data["restored_verdict"] == "malicious"
+        assert data["blocked"] is True
+        enforce_app.state.gateway.block_data.assert_called_once_with(
+            "tx1", "h1", ["rule1"]
+        )
+
+    def test_revert_confirm_unblocks_suspicious(self, enforce_client, enforce_db, enforce_app):
+        """Reverting a confirm on a SUSPICIOUS item should unblock it."""
+        enforce_db.save_verdict("h1", "tx1", Verdict.SUSPICIOUS, '[]', 0.97, "0.1.0")
+        # Confirm first (escalates to malicious, blocks in enforce mode)
+        enforce_client.post(
+            "/api/admin/review/h1/confirm",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"notes": "real phishing"},
+        )
+        # Reset mock call tracking after confirm
+        enforce_app.state.gateway.reset_mock()
+        # Now revert the confirm
+        resp = enforce_client.post(
+            "/api/admin/review/h1/revert",
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "reverted"
+        assert data["restored_verdict"] == "suspicious"
+        assert data["unblocked"] is True
+        enforce_app.state.gateway.unblock_data.assert_called_once_with("tx1", "h1")
+
+    def test_revert_in_dry_run_no_gateway_action(self, client, db):
+        """Reverting in dry-run mode should not include blocked/unblocked fields."""
+        db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+        client.post(
+            "/api/admin/review/h1/dismiss",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={},
+        )
+        resp = client.post(
+            "/api/admin/review/h1/revert",
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "reverted"
+        assert "blocked" not in data
+        assert "unblocked" not in data

@@ -82,6 +82,7 @@ document.addEventListener('alpine:init', function () {
       },
 
       getSource(item) {
+        if (item.source && item.source !== 'local') return 'feed';
         if (item.tx_id === 'backfill') return 'backfill';
         return 'webhook';
       }

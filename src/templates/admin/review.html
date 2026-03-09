@@ -223,10 +223,10 @@
         <span x-show="confirmDialog.action === 'bulk_dismiss'" x-text="'Dismiss ' + (confirmDialog.hashes ? confirmDialog.hashes.length : 0) + ' Items as False Positive'"></span>
       </h3>
       <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 16px; line-height: 1.5;">
-        <span x-show="confirmDialog.action === 'confirm'">This will permanently mark this content as malicious. In enforce mode, the content will be blocked immediately. This decision is used as ground truth for ML model retraining.</span>
-        <span x-show="confirmDialog.action === 'dismiss'">This will mark this content as clean. The scanner will never re-flag this content, even during future backfill sweeps. This decision is used as ground truth for ML model retraining.</span>
-        <span x-show="confirmDialog.action === 'revert'">This will remove the admin override and restore the original scanner verdict. The item will return to pending review. In enforce mode, previously blocked content may become accessible again.</span>
-        <span x-show="confirmDialog.action === 'bulk_confirm'">This will permanently mark all selected items as malicious. In enforce mode, they will all be blocked immediately.</span>
+        <span x-show="confirmDialog.action === 'confirm'">This will mark this content as malicious. In enforce mode, the content will be blocked immediately. You can revert this decision later if needed. This decision is used as ground truth for ML model retraining.</span>
+        <span x-show="confirmDialog.action === 'dismiss'">This will mark this content as a false positive. In enforce mode, if the content was blocked, it will be unblocked. The scanner will never re-flag this content. This decision is used as ground truth for ML model retraining.</span>
+        <span x-show="confirmDialog.action === 'revert'">This will remove the admin override and restore the original scanner verdict. The item will return to pending review. In enforce mode, blocking state will be updated to match the restored verdict.</span>
+        <span x-show="confirmDialog.action === 'bulk_confirm'">This will mark all selected items as malicious. In enforce mode, they will all be blocked immediately.</span>
         <span x-show="confirmDialog.action === 'bulk_dismiss'">This will mark all selected items as clean. The scanner will never re-flag these items.</span>
       </p>
       <div x-show="confirmDialog.hash" style="margin-bottom: 12px; font-size: 0.8rem;">

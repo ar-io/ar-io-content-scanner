@@ -35,7 +35,7 @@
 
       <div style="display: flex; gap: 6px; align-items: center;">
         <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600; margin-right: 4px;">Source:</span>
-        <template x-for="s in ['all','webhook','backfill']">
+        <template x-for="s in ['all','webhook','feed','backfill']">
           <button class="filter-btn" :class="{ active: sourceFilter === s }" @click="setFilter('sourceFilter', s)" x-text="s" style="text-transform: capitalize;"></button>
         </template>
       </div>

@@ -258,12 +258,25 @@ def build_admin_router(app_state) -> APIRouter:
         if _state.screenshot:
             _state.screenshot.delete(content_hash)
 
+        # In enforce mode, unblock content that was previously blocked
+        unblocked = None
+        if settings.scanner_mode == "enforce":
+            gateway = _state.gateway
+            unblocked = await gateway.unblock_data(verdict.tx_id, content_hash)
+
         logger.info(
             "admin_dismiss",
-            extra={"content_hash": content_hash, "tx_id": verdict.tx_id},
+            extra={
+                "content_hash": content_hash,
+                "tx_id": verdict.tx_id,
+                **({"unblocked": unblocked} if unblocked is not None else {}),
+            },
         )
 
-        return {"status": "dismissed"}
+        result: dict = {"status": "dismissed"}
+        if unblocked is not None:
+            result["unblocked"] = unblocked
+        return result
 
     @router.post("/api/admin/bulk/confirm")
     async def bulk_confirm(
@@ -362,6 +375,7 @@ def build_admin_router(app_state) -> APIRouter:
 
         succeeded = 0
         errors = []
+        unblocked_tx_ids = []
 
         for h in hashes:
             if not isinstance(h, str) or not _HASH_PATTERN.match(h):
@@ -388,6 +402,12 @@ def build_admin_router(app_state) -> APIRouter:
             if _state.screenshot:
                 _state.screenshot.delete(h)
 
+            if settings.scanner_mode == "enforce":
+                gateway = _state.gateway
+                success = await gateway.unblock_data(verdict.tx_id, h)
+                if success:
+                    unblocked_tx_ids.append(verdict.tx_id)
+
             succeeded += 1
 
         logger.info(
@@ -404,6 +424,7 @@ def build_admin_router(app_state) -> APIRouter:
             "succeeded": succeeded,
             "failed": len(errors),
             "errors": errors,
+            "unblocked_tx_ids": unblocked_tx_ids,
         }
 
     @router.post("/api/admin/review/{content_hash}/revert")
@@ -431,6 +452,28 @@ def build_admin_router(app_state) -> APIRouter:
         db.update_verdict(content_hash, original_verdict)
         db.delete_override(content_hash)
 
+        # In enforce mode, sync gateway block state with the restored verdict
+        blocked = None
+        unblocked = None
+        if settings.scanner_mode == "enforce":
+            if (
+                override.admin_verdict == "confirmed_clean"
+                and original_verdict in (Verdict.MALICIOUS,)
+            ):
+                # Was blocked originally, then unblocked by dismiss — re-block it
+                rules = json.loads(override.original_rules or "[]")
+                blocked = await _state.gateway.block_data(
+                    override.tx_id, content_hash, rules
+                )
+            elif (
+                override.admin_verdict == "confirmed_malicious"
+                and original_verdict not in (Verdict.MALICIOUS,)
+            ):
+                # Was NOT originally blocked, but was blocked by confirm — unblock it
+                unblocked = await _state.gateway.unblock_data(
+                    override.tx_id, content_hash
+                )
+
         logger.info(
             "admin_revert",
             extra={
@@ -438,13 +481,20 @@ def build_admin_router(app_state) -> APIRouter:
                 "tx_id": override.tx_id,
                 "reverted_from": override.admin_verdict,
                 "restored_verdict": original_verdict.value,
+                **({"blocked": blocked} if blocked is not None else {}),
+                **({"unblocked": unblocked} if unblocked is not None else {}),
             },
         )
 
-        return {
+        result: dict = {
             "status": "reverted",
             "restored_verdict": original_verdict.value,
         }
+        if blocked is not None:
+            result["blocked"] = blocked
+        if unblocked is not None:
+            result["unblocked"] = unblocked
+        return result
 
     @router.get("/api/admin/history")
     async def history_list(
@@ -499,6 +549,7 @@ def build_admin_router(app_state) -> APIRouter:
             fieldnames=[
                 "content_hash", "tx_id", "verdict", "matched_rules",
                 "ml_score", "scanned_at", "scanner_version", "admin_status",
+                "source",
             ],
         )
         writer.writeheader()

@@ -2,6 +2,7 @@
 <div x-data="settingsTab" x-init="init()">
   <div class="section-header">
     <h2>Settings</h2>
+    <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0;">Settings are configured via environment variables. Changes require a container restart.</p>
   </div>
 
   <template x-if="error">
@@ -157,15 +158,17 @@
       <div class="card">
         <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Google Safe Browsing</h3>
         <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0 0 16px;">Cross-reference detected threats with Google Safe Browsing API and monitor gateway domain status.</p>
-        <template x-if="!config.safe_browsing || !config.safe_browsing.enabled">
-          <p style="color: var(--color-gray); font-size: 0.85rem; margin: 0;">Not configured. Set SAFE_BROWSING_API_KEY in your .env to enable. Requires a Google Cloud API key with Safe Browsing API enabled.</p>
-        </template>
         <template x-if="config.safe_browsing && config.safe_browsing.enabled">
           <div class="grid-kv">
-            <div style="color: var(--color-gray);">API Key</div>
+            <div style="color: var(--color-gray);">Domain Monitoring</div>
             <div>
               <span class="status-dot enabled"></span>
-              <span>Set</span>
+              <span>Active (via Transparency Report)</span>
+            </div>
+            <div style="color: var(--color-gray);">URL Checks (API)</div>
+            <div>
+              <span class="status-dot" :class="config.safe_browsing.api_key_set ? 'enabled' : 'disabled'"></span>
+              <span x-text="config.safe_browsing.api_key_set ? 'Enabled' : 'Not configured (optional)'"></span>
             </div>
             <div style="color: var(--color-gray);">Check Interval</div>
             <div style="font-weight: 600;" x-text="config.safe_browsing.check_interval + 's'"></div>
@@ -200,7 +203,8 @@
       <div class="card">
         <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Training Data</h3>
         <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 12px; line-height: 1.5;">
-          Export operator-verified verdicts as labeled training data for ML model improvement. Each confirmed or dismissed item provides a ground-truth label.
+          Export operator-verified verdicts as labeled training data for ML model retraining.
+          Use with the scripts in the <span class="mono">training/</span> directory to retrain the XGBoost model with your ground-truth labels.
         </p>
         <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 16px; font-size: 0.85rem;">
           <span style="color: var(--color-red);">

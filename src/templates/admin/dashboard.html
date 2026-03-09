@@ -29,10 +29,12 @@
         <div style="background: var(--color-red); color: white; padding: 12px 20px; border-radius: 8px; margin-bottom: 12px; font-size: 0.9rem;">
           <div style="font-weight: 600; margin-bottom: 4px;">WARNING: Your gateway domain is flagged by Google Safe Browsing</div>
           <div style="font-size: 0.8rem; opacity: 0.9;">
-            Users may see browser warnings. Review and block flagged content immediately.
+            Users may see browser warnings when visiting your gateway.
             <template x-if="stats.safe_browsing.domain_threats && stats.safe_browsing.domain_threats.length">
-              <span> Threats: <span x-text="stats.safe_browsing.domain_threats.join(', ')"></span></span>
+              <span> Threats: <span x-text="stats.safe_browsing.domain_threats.join(', ')"></span>.</span>
             </template>
+            Review flagged content in the Review Queue, block all confirmed phishing, then request a review at
+            <a href="https://search.google.com/search-console" target="_blank" rel="noopener" style="color: white; text-decoration: underline;">Google Search Console</a>.
           </div>
         </div>
       </template>

@@ -489,9 +489,11 @@ class ScannerDB:
             params.append(verdict_filter)
 
         if source_filter == "webhook":
-            conditions.append("v.tx_id != 'backfill'")
+            conditions.append("v.source = 'local' AND v.tx_id != 'backfill'")
         elif source_filter == "backfill":
             conditions.append("v.tx_id = 'backfill'")
+        elif source_filter == "feed":
+            conditions.append("v.source != 'local'")
 
         if period != "all":
             seconds = {"24h": 86400, "7d": 604800, "30d": 2592000}.get(period)
@@ -519,7 +521,7 @@ class ScannerDB:
         rows = self.conn.execute(
             f"SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
             f"v.ml_score, v.scanned_at, v.scanner_version, "
-            f"o.admin_verdict "
+            f"o.admin_verdict, v.source "
             f"FROM scan_verdicts v "
             f"LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
             f"{where} "
@@ -537,6 +539,7 @@ class ScannerDB:
                 "scanned_at": r[5],
                 "scanner_version": r[6],
                 "admin_status": r[7],
+                "source": r[8],
             }
             for r in rows
         ]

@@ -79,12 +79,19 @@ The dashboard provides:
 
 Screenshots of flagged content are captured automatically using a headless browser (included in the Docker image). They appear as thumbnails in the review queue, making it easy to identify phishing pages at a glance. Screenshots are deleted when you confirm or dismiss an item.
 
+### Securing the Dashboard
+
+The admin dashboard serves over plain HTTP on port 3100. The `SCANNER_ADMIN_KEY` is sent as a Bearer token on every API request. For production deployments accessed over a network, place the scanner behind a reverse proxy with TLS termination (e.g., nginx, Caddy, or Cloudflare Tunnel) to protect the admin key in transit.
+
+The `SCANNER_ADMIN_KEY` is a shared secret, not a per-user credential. All admin actions (confirm, dismiss, revert) are attributed to this key. Treat it like a root password and rotate it periodically.
+
 ### Admin Overrides
 
 When you confirm or dismiss a detection, an **admin override** is created:
 
 - **Confirm**: Marks content as malicious. In enforce mode, the content is immediately blocked. The override persists — if the same content is re-encountered (e.g., during backfill), it is blocked without re-scanning.
-- **Dismiss**: Marks content as clean. The verdict is updated to CLEAN and the content is never re-flagged, even on subsequent backfill sweeps.
+- **Dismiss**: Marks content as a false positive. The verdict is updated to CLEAN and the content is never re-flagged. In enforce mode, the scanner sends an unblock request to the gateway so the content becomes accessible again.
+- **Revert**: Removes the admin override and restores the original scanner verdict. In enforce mode, blocking state is updated to match the restored verdict (re-blocks if reverting a dismiss of malicious content, unblocks if reverting a confirm of non-malicious content).
 
 Overrides persist in the database across container restarts.
 
@@ -183,6 +190,15 @@ Example log entry for a blocked phishing page:
 }
 ```
 
+### Alerting
+
+Content Scanner does not include a built-in notification system. To get alerted on new detections, monitor the Prometheus metrics endpoint (`/metrics/prometheus`) with your existing monitoring stack. Key alerts to configure:
+
+- `scanner_scans_by_verdict{verdict="malicious"}` increasing — new malicious content detected
+- `scanner_blocks_failed` > 0 — gateway block API unreachable
+- `scanner_safe_browsing_domain_flagged` = 1 — your gateway domain is on Google's blocklist
+- `scanner_queue_depth` > 50 sustained — workers can't keep up with incoming content
+
 ## Configuration Reference
 
 ### Required
@@ -207,7 +223,7 @@ Example log entry for a blocked phishing page:
 | `SCAN_TIMEOUT` | `10000` | Gateway fetch timeout in ms |
 | `DB_PATH` | `/app/data/scanner.db` | SQLite database path |
 | `ADMIN_UI_ENABLED` | `true` | Enable the admin dashboard at `/admin` |
-| `GATEWAY_PUBLIC_URL` | -- | Public gateway URL for clickable TX ID links (e.g., `https://vilenarios.com`) |
+| `GATEWAY_PUBLIC_URL` | -- | Public gateway URL (e.g., `https://vilenarios.com`). Enables clickable TX ID links in admin UI and Safe Browsing domain monitoring |
 | `SCREENSHOT_ENABLED` | `true` | Capture screenshots of flagged content for admin review |
 | `SCREENSHOT_DIR` | `/app/data/screenshots` | Directory to store screenshot files |
 | `SCREENSHOT_TIMEOUT_MS` | `15000` | Page load + capture timeout in ms |
@@ -294,15 +310,14 @@ SCANNER_WORKERS=4
 
 1. Open the admin dashboard at `http://localhost:3100/admin`
 2. Go to the **Review Queue** tab and find the flagged content
-3. Click **Dismiss** to mark it as a false positive — this updates the verdict to CLEAN and creates an override so the content is never re-flagged
-4. If the content was already blocked in enforce mode, you'll also need to unblock it via the gateway's admin API
+3. Click **Dismiss** to mark it as a false positive — this updates the verdict to CLEAN, creates an override so the content is never re-flagged, and in enforce mode sends an unblock request to the gateway
 
 ## Data and Persistence
 
 Content Scanner stores its SQLite database at `DB_PATH` (default: `/app/data/scanner.db`). This contains:
 
 - **Verdict cache** (`scan_verdicts`): Scan results keyed by content hash, including Google Safe Browsing status. Since Arweave content is immutable, these verdicts are permanent.
-- **Scan queue** (`scan_queue`): Pending webhook events awaiting processing. Items older than 1 hour are automatically purged.
+- **Scan queue** (`scan_queue`): Pending webhook events awaiting processing. Items older than 1 hour are automatically purged. Under extreme load, ensure `SCANNER_WORKERS` is high enough to process items before the 1-hour TTL.
 - **Admin overrides** (`admin_overrides`): Operator confirm/dismiss decisions from the admin dashboard. These persist across restarts and take priority over re-scans.
 
 Screenshots of flagged content are stored at `SCREENSHOT_DIR` (default: `/app/data/screenshots`). These are JPEG files named by content hash, deleted automatically when an admin confirms or dismisses the item. If screenshots are lost, they are not recaptured — this only affects the admin review UI.

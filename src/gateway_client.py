@@ -107,5 +107,58 @@ class GatewayClient:
                 await asyncio.sleep(2)
         return False
 
+    async def unblock_data(
+        self,
+        tx_id: str,
+        content_hash: str,
+    ) -> bool:
+        for attempt in range(2):
+            try:
+                resp = await self._client.request(
+                    "DELETE",
+                    "/ar-io/admin/block-data",
+                    json={
+                        "id": tx_id,
+                        "hash": content_hash,
+                        "source": "content-scanner",
+                        "notes": "Admin dismissed as false positive",
+                    },
+                    headers={
+                        "Authorization": f"Bearer {self.admin_api_key}",
+                    },
+                )
+                success = 200 <= resp.status_code < 300
+                if success:
+                    logger.info(
+                        "unblock_sent",
+                        extra={
+                            "tx_id": tx_id,
+                            "content_hash": content_hash,
+                            "gateway_response": resp.status_code,
+                        },
+                    )
+                    return True
+                logger.error(
+                    "unblock_failed",
+                    extra={
+                        "tx_id": tx_id,
+                        "status_code": resp.status_code,
+                        "body": resp.text,
+                        "attempt": attempt + 1,
+                    },
+                )
+            except httpx.HTTPError as e:
+                logger.error(
+                    "unblock_error",
+                    extra={
+                        "tx_id": tx_id,
+                        "error": str(e),
+                        "attempt": attempt + 1,
+                    },
+                )
+            if attempt == 0:
+                await asyncio.sleep(2)
+        return False
+
     async def close(self) -> None:
         await self._client.aclose()

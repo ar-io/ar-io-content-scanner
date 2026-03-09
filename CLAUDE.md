@@ -46,10 +46,10 @@ Gateway emits `DATA_CACHED` webhook → `POST /scan` (FastAPI) → `Scanner.proc
 - **`worker.py`**: `WorkerPool` runs N async worker loops that poll `scan_queue` with 0.5s sleep. Includes a cleanup loop that purges items older than 1 hour. Optionally runs backfill, feed poller, and Safe Browsing monitor loops.
 - **`backfill.py`**: `BackfillScanner` walks the gateway's contiguous data filesystem, content-sniffs for HTML, scans through the rule engine + ML, caches verdicts, and blocks malicious content in enforce mode. Uses `GatewayDBReader` for read-only hash→TX ID lookups via the gateway's `data.db`.
 - **`db.py`**: Five SQLite tables — `scan_verdicts` (content hash → verdict, with `source` column for local vs peer origin and `safe_browsing_flagged` column), `scan_queue` (pending/processing/failed items), `admin_overrides` (operator confirm/dismiss decisions), `feed_sync_state` (cursor-based sync tracking per peer), `scanner_state` (key-value persistence for dashboard stats across restarts). WAL mode for concurrent reads. `has_verdict()` for efficient backfill cache checks.
-- **`rules/engine.py`**: `RuleEngine.evaluate()` runs all enabled rules, then applies the verdict matrix combining rule results with ML score.
+- **`rules/engine.py`**: `RuleEngine.evaluate()` runs all enabled rules, then applies the verdict matrix combining rule results with ML score. Shared helpers live in `rules/utils.py` (e.g. `has_password_like_input()` used by multiple rules).
 - **`gateway_client.py`**: Async httpx client with streaming fetch (respects `max_bytes` limit) and block API call.
 - **`metrics.py`**: Thread-safe `ScanMetrics` with counters for verdicts, sources, rule triggers, feed import/export stats, and Safe Browsing checks/escalations/errors. Exposes `/metrics/prometheus` endpoint.
-- **`safe_browsing.py`**: `SafeBrowsingClient` wraps Google Safe Browsing Lookup API v4. `check_url()`/`check_urls()` return `SafeBrowsingResult` with `flagged` bool and `threat_types`. Fail-open design: API errors never affect scanning. Used both on-verdict (in `scanner.py`) and periodically (in `worker.py`'s monitor loop).
+- **`safe_browsing.py`**: `SafeBrowsingClient` with two backends: Lookup API v4 (`check_url()`/`check_urls()`, requires `SAFE_BROWSING_API_KEY`) for per-URL checks, and Google Transparency Report (`check_domain()`, no key needed) for site-level domain monitoring. Returns `SafeBrowsingResult` or `DomainStatus`. Fail-open design: API errors never affect scanning. Used on-verdict (in `scanner.py`) and periodically (in `worker.py`'s monitor loop). Domain monitoring requires `GATEWAY_PUBLIC_URL` to be set.
 - **`screenshot.py`**: `ScreenshotService` uses Playwright (headless Chromium) to capture screenshots of flagged content. Network-isolated: only gateway-origin requests are allowed. Screenshots stored as `{SCREENSHOT_DIR}/{content_hash}.jpg`, deleted when admin confirms/dismisses.
 - **`feed/`**: Peer-to-peer verdict sharing. `client.py` (`FeedClient`) is an async httpx client for fetching verdicts from peers. `poller.py` (`FeedPoller`) periodically syncs new verdicts from configured peer URLs using cursor-based pagination. `routes.py` exposes `GET /api/verdicts` (paginated feed) and `GET /api/verdicts/{hash}` (single lookup) for peers to consume. `auth.py` provides Bearer token auth via `VERDICT_API_KEY`. Only exports `source='local'` verdicts to prevent echo loops.
 - **`admin/routes.py`**: Admin API router built via `build_admin_router(app_state)`. Uses `_state.db` accessor pattern (reads from `app_state` at request time, not build time) so tests can replace DB after `build_app()`.
@@ -64,10 +64,14 @@ MALICIOUS        any            MALICIOUS (auto-block in enforce mode)
 CLEAN            >= 0.95        SUSPICIOUS (log only, never blocks)
 CLEAN            < 0.95         CLEAN
 
-Post-scan Safe Browsing escalation (if SAFE_BROWSING_API_KEY set):
+Post-scan Safe Browsing escalation (requires SAFE_BROWSING_API_KEY for URL checks):
 SUSPICIOUS + Google flags URL → MALICIOUS (two independent signals)
 MALICIOUS + Google flags URL → MALICIOUS (corroborated, no change)
 Any verdict + Google error     → no change (fail-open)
+
+Periodic domain monitoring (no API key needed, uses Transparency Report):
+Gateway domain flagged → logged as error (critical alert)
+GATEWAY_PUBLIC_URL required to enable domain monitoring
 ```
 
 ### Detection Rules (all conjunctive: Signal A AND Signal B)
@@ -114,7 +118,7 @@ Verdict feed: `VERDICT_API_KEY` (enables feed feature), `VERDICT_FEED_URLS` (com
 
 Backfill: `BACKFILL_ENABLED` (false), `BACKFILL_DATA_PATH` (required if enabled), `BACKFILL_GATEWAY_DB_PATH` (optional, for hash→TX ID lookups), `BACKFILL_RATE` (5 files/sec), `BACKFILL_INTERVAL_HOURS` (24)
 
-Safe Browsing: `SAFE_BROWSING_API_KEY` (enables Google Safe Browsing integration), `SAFE_BROWSING_CHECK_INTERVAL` (300s, min 60 — periodic domain + URL monitoring interval)
+Safe Browsing: `SAFE_BROWSING_API_KEY` (optional — enables per-URL Lookup API checks; domain monitoring via Transparency Report works without it), `SAFE_BROWSING_CHECK_INTERVAL` (300s, min 60 — periodic domain + URL monitoring interval)
 
 ## Testing Patterns
 

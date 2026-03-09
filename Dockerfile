@@ -16,6 +16,9 @@ COPY src/ src/
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
+ARG SCANNER_VERSION=dev
+ENV SCANNER_VERSION=${SCANNER_VERSION}
+
 EXPOSE 3100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
