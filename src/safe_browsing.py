@@ -36,6 +36,7 @@ class DomainStatus:
     flagged: bool
     threat_types: list[str] = field(default_factory=list)
     status_code: int = 0  # 1=no data, 3=some pages unsafe, 4=not dangerous
+    error: bool = False  # True if the check failed (fail-open)
 
 
 class SafeBrowsingClient:
@@ -193,7 +194,7 @@ class SafeBrowsingClient:
                 exc_info=True,
                 extra={"domain": domain},
             )
-            return DomainStatus(domain=domain, flagged=False)
+            return DomainStatus(domain=domain, flagged=False, error=True)
 
     async def close(self) -> None:
         await self._client.aclose()

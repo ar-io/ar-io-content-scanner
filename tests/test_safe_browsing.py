@@ -167,6 +167,7 @@ class TestSafeBrowsingClient:
             result = await client.check_domain("example.com")
 
         assert result.flagged is False
+        assert result.error is False
         assert result.domain == "example.com"
         assert result.threat_types == []
         assert result.status_code == 4
@@ -218,7 +219,7 @@ class TestSafeBrowsingClient:
 
     @pytest.mark.asyncio
     async def test_check_domain_error_fails_open(self):
-        """Transparency Report errors fail open — return unflagged."""
+        """Transparency Report errors fail open — return unflagged with error flag."""
         client = SafeBrowsingClient(api_key="")
 
         with patch.object(client._client, "get", new_callable=AsyncMock, side_effect=Exception("network error")):
@@ -226,6 +227,7 @@ class TestSafeBrowsingClient:
 
         assert result.flagged is False
         assert result.domain == "example.com"
+        assert result.error is True
         await client.close()
 
     @pytest.mark.asyncio

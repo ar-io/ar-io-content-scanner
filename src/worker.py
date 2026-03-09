@@ -207,7 +207,7 @@ class WorkerPool:
                 # Check site-level domain status via Transparency Report
                 domain_status = await self.safe_browsing.check_domain(domain)
 
-                if self.metrics:
+                if self.metrics and not domain_status.error:
                     self.metrics.set_safe_browsing_domain_flagged(
                         domain_status.flagged,
                         threat_types=domain_status.threat_types,
@@ -273,12 +273,17 @@ class WorkerPool:
                                 if self.metrics:
                                     self.metrics.record_block(success)
 
+                urls_checked = (
+                    len(recent) if recent and self.safe_browsing.api_key
+                    else 0
+                )
                 logger.info(
                     "safe_browsing_check_complete",
                     extra={
                         "domain_flagged": domain_status.flagged,
+                        "domain_error": domain_status.error,
                         "domain_threats": domain_status.threat_types,
-                        "content_urls_checked": len(recent),
+                        "content_urls_checked": urls_checked,
                     },
                 )
 
