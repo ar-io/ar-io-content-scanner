@@ -12,6 +12,7 @@ from src.metrics import ScanMetrics
 from src.models import Verdict
 from src.safe_browsing import SafeBrowsingClient
 from src.scanner import Scanner
+from src.screenshot import ScreenshotService
 
 logger = logging.getLogger("scanner.worker")
 
@@ -28,6 +29,7 @@ class WorkerPool:
         gateway: GatewayClient | None = None,
         settings: Settings | None = None,
         metrics: ScanMetrics | None = None,
+        screenshot: ScreenshotService | None = None,
     ):
         self.scanner = scanner
         self.db = db
@@ -38,6 +40,7 @@ class WorkerPool:
         self.gateway = gateway
         self.settings = settings
         self.metrics = metrics
+        self.screenshot = screenshot
         self._tasks: list[asyncio.Task] = []
         self._running = False
 
@@ -270,6 +273,8 @@ class WorkerPool:
                                     item["content_hash"],
                                     [],
                                 )
+                                if success:
+                                    self.db.mark_blocked(item["content_hash"])
                                 if self.metrics:
                                     self.metrics.record_block(success)
 
@@ -313,6 +318,16 @@ class WorkerPool:
                         "Reset failed items for retry",
                         extra={"count": retried},
                     )
+                # Clean up old screenshots
+                if self.screenshot and self.settings:
+                    deleted_ss = self.screenshot.cleanup_old(
+                        self.settings.screenshot_retention_days
+                    )
+                    if deleted_ss > 0:
+                        logger.info(
+                            "Purged expired screenshots",
+                            extra={"count": deleted_ss},
+                        )
                 # Persist all metrics to DB
                 if self.metrics:
                     self.metrics.persist_to_db(self.db)

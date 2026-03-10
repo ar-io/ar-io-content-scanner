@@ -124,6 +124,11 @@ class ScannerDB:
                 "ALTER TABLE scan_verdicts ADD COLUMN safe_browsing_flagged INTEGER"
             )
             self._conn.commit()
+        if "blocked" not in columns:
+            self._conn.execute(
+                "ALTER TABLE scan_verdicts ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0"
+            )
+            self._conn.commit()
 
         logger.info("Database initialized", extra={"db_path": self.db_path})
 
@@ -444,7 +449,7 @@ class ScannerDB:
         rows = self.conn.execute(
             f"SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
             f"v.ml_score, v.scanned_at, v.scanner_version, "
-            f"o.admin_verdict, o.notes, v.safe_browsing_flagged "
+            f"o.admin_verdict, o.notes, v.safe_browsing_flagged, v.blocked "
             f"FROM scan_verdicts v "
             f"LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
             f"WHERE {where} "
@@ -464,6 +469,7 @@ class ScannerDB:
                 "admin_override": r[7],
                 "admin_notes": r[8],
                 "safe_browsing_flagged": bool(r[9]) if r[9] is not None else None,
+                "blocked": bool(r[10]) if r[10] is not None else False,
             }
             for r in rows
         ]
@@ -834,6 +840,22 @@ class ScannerDB:
         }
 
     # --- Safe Browsing methods ---
+
+    def mark_blocked(self, content_hash: str) -> None:
+        self.conn.execute(
+            "UPDATE scan_verdicts SET blocked = 1 "
+            "WHERE content_hash = ?",
+            (content_hash,),
+        )
+        self.conn.commit()
+
+    def mark_unblocked(self, content_hash: str) -> None:
+        self.conn.execute(
+            "UPDATE scan_verdicts SET blocked = 0 "
+            "WHERE content_hash = ?",
+            (content_hash,),
+        )
+        self.conn.commit()
 
     def update_safe_browsing_status(
         self, content_hash: str, flagged: bool

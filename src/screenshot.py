@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -89,6 +90,24 @@ class ScreenshotService:
                 extra={"content_hash": content_hash},
             )
             return False
+
+    def cleanup_old(self, retention_days: int) -> int:
+        """Delete screenshots older than retention_days. Returns count deleted."""
+        if retention_days <= 0:
+            return 0
+        cutoff = time.time() - (retention_days * 86400)
+        deleted = 0
+        try:
+            for path in self.screenshot_dir.glob("*.jpg"):
+                try:
+                    if path.stat().st_mtime < cutoff:
+                        path.unlink()
+                        deleted += 1
+                except OSError:
+                    pass
+        except OSError:
+            logger.warning("Error scanning screenshot directory for cleanup")
+        return deleted
 
     async def capture(self, tx_id: str, content_hash: str) -> bool:
         if not self.available:

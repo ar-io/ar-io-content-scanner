@@ -69,7 +69,7 @@
   </template>
 
   <!-- Item cards -->
-  <div x-show="!loading" style="display: flex; flex-direction: column; gap: 12px;">
+  <div x-show="!loading" style="display: flex; flex-direction: column; gap: 20px;">
     <template x-for="item in items" :key="item.content_hash">
       <div class="card" style="padding: 20px 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -80,6 +80,9 @@
                 style="width: 16px; height: 16px; cursor: pointer; accent-color: var(--color-primary); flex-shrink: 0;">
             </template>
             <span :class="badgeClass(item.verdict)" x-text="item.verdict"></span>
+            <template x-if="item.blocked">
+              <span style="display: inline-block; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: var(--color-gray); color: white; letter-spacing: 0.03em; text-transform: uppercase;">Blocked</span>
+            </template>
           </div>
           <span style="font-size: 0.8rem; color: var(--color-gray);" x-text="formatTimestamp(item.scanned_at)"></span>
         </div>
@@ -160,7 +163,10 @@
 
         <!-- Actions -->
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <template x-if="!item.admin_override">
+          <template x-if="!item.admin_override && item.blocked">
+            <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600;">Blocked by scanner</span>
+          </template>
+          <template x-if="!item.admin_override && !item.blocked">
             <button class="btn btn-danger btn-sm" @click="promptConfirm(item.content_hash)">
               Confirm Malicious
             </button>
@@ -334,11 +340,17 @@
               <span x-show="detail.safe_browsing_flagged === false" style="color: var(--color-green); font-weight: 600;">Not flagged</span>
               <span x-show="detail.safe_browsing_flagged === null || detail.safe_browsing_flagged === undefined" style="color: var(--color-gray);">Not checked</span>
             </div>
+            <div style="color: var(--color-gray); font-weight: 600;">Block Status</div>
+            <div>
+              <span x-show="detail.blocked" style="color: var(--color-red); font-weight: 600;">Blocked</span>
+              <span x-show="!detail.blocked" style="color: var(--color-gray);">Not blocked</span>
+            </div>
             <div style="color: var(--color-gray); font-weight: 600;">Admin Status</div>
             <div>
               <span x-show="detail.admin_override === 'confirmed_malicious'" style="color: var(--color-red); font-weight: 600;">Confirmed malicious</span>
               <span x-show="detail.admin_override === 'confirmed_clean'" style="color: var(--color-green); font-weight: 600;">Dismissed (false positive)</span>
-              <span x-show="!detail.admin_override" style="color: var(--color-amber); font-weight: 600;">Pending review</span>
+              <span x-show="!detail.admin_override && detail.blocked" style="color: var(--color-gray); font-weight: 600;">Blocked by scanner</span>
+              <span x-show="!detail.admin_override && !detail.blocked" style="color: var(--color-amber); font-weight: 600;">Pending review</span>
             </div>
           </div>
 
@@ -443,8 +455,13 @@
 
           <!-- Actions in modal -->
           <template x-if="!detail.admin_override">
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-              <button class="btn btn-danger" @click="promptConfirm(detail.content_hash); closeModal();">Confirm Malicious</button>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 20px;">
+              <template x-if="detail.blocked">
+                <span style="font-size: 0.85rem; color: var(--color-gray); font-weight: 600;">Blocked by scanner</span>
+              </template>
+              <template x-if="!detail.blocked">
+                <button class="btn btn-danger" @click="promptConfirm(detail.content_hash); closeModal();">Confirm Malicious</button>
+              </template>
               <button class="btn btn-outline" @click="promptDismiss(detail.content_hash); closeModal();">Dismiss (False Positive)</button>
             </div>
           </template>

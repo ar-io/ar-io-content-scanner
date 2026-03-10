@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,6 +38,29 @@ class TestScreenshotService:
 
     def test_delete_nonexistent(self):
         assert self.service.delete("nonexistent") is True
+
+    def test_cleanup_old_deletes_expired(self):
+        # Create an "old" screenshot (mtime set to 60 days ago)
+        old_path = Path(self.tmpdir) / "oldhash.jpg"
+        old_path.write_bytes(b"\xff\xd8\xff")
+        old_mtime = time.time() - (60 * 86400)
+        os.utime(str(old_path), (old_mtime, old_mtime))
+
+        # Create a "recent" screenshot
+        new_path = Path(self.tmpdir) / "newhash.jpg"
+        new_path.write_bytes(b"\xff\xd8\xff")
+
+        deleted = self.service.cleanup_old(retention_days=30)
+        assert deleted == 1
+        assert not old_path.exists()
+        assert new_path.exists()
+
+    def test_cleanup_old_zero_retention_skips(self):
+        path = Path(self.tmpdir) / "hash.jpg"
+        path.write_bytes(b"\xff\xd8\xff")
+        deleted = self.service.cleanup_old(retention_days=0)
+        assert deleted == 0
+        assert path.exists()
 
     def test_available_false_before_startup(self):
         assert self.service.available is False

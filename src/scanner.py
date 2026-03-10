@@ -297,6 +297,8 @@ class Scanner:
                             rules,
                         )
                         self.metrics.record_block(success)
+                        if success:
+                            self.db.mark_blocked(content_hash)
                     logger.warning(
                         "scan_admin_override_malicious",
                         extra={"tx_id": tx_id, "override": "confirmed_malicious"},
@@ -352,6 +354,8 @@ class Scanner:
                                 tx_id, content_hash, rules
                             )
                             self.metrics.record_block(success)
+                            if success:
+                                self.db.mark_blocked(content_hash)
 
                         logger.info(
                             "peer_verdict_used",
@@ -454,6 +458,8 @@ class Scanner:
                     tx_id, content_hash, result.matched_rules
                 )
                 self.metrics.record_block(success)
+                if success:
+                    self.db.mark_blocked(content_hash)
                 action = "blocked" if success else "block_failed"
             elif self.settings.scanner_mode == "enforce" and not content_hash:
                 action = "no_hash"

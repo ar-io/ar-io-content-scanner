@@ -2,6 +2,26 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore[no-redef]
+
+
+def _read_pyproject_version() -> str:
+    """Read version from pyproject.toml."""
+    toml_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    try:
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+        return data.get("project", {}).get("version", "0.0.0")
+    except (FileNotFoundError, Exception):
+        return "0.0.0"
+
+
+PROJECT_VERSION = _read_pyproject_version()
 
 
 @dataclass(frozen=True)
@@ -50,6 +70,7 @@ class Settings:
     screenshot_enabled: bool = True
     screenshot_dir: str = "/app/data/screenshots"
     screenshot_timeout_ms: int = 15000
+    screenshot_retention_days: int = 30
 
     # Verdict feed: share verdicts with peers
     verdict_api_key: str = ""
@@ -211,7 +232,7 @@ def load_settings() -> Settings:
         scan_timeout_ms=scan_timeout_ms,
         db_path=os.environ.get("DB_PATH", "/app/data/scanner.db"),
         log_level=os.environ.get("LOG_LEVEL", "info"),
-        scanner_version=os.environ.get("SCANNER_VERSION", "0.1.0"),
+        scanner_version=os.environ.get("SCANNER_VERSION", "") or PROJECT_VERSION,
         verdict_api_key=verdict_api_key,
         verdict_feed_urls=verdict_feed_urls,
         verdict_feed_poll_interval=verdict_feed_poll_interval,
@@ -224,6 +245,9 @@ def load_settings() -> Settings:
             "SCREENSHOT_DIR", "/app/data/screenshots"
         ),
         screenshot_timeout_ms=screenshot_timeout_ms,
+        screenshot_retention_days=int(
+            os.environ.get("SCREENSHOT_RETENTION_DAYS", "30")
+        ),
         safe_browsing_api_key=safe_browsing_api_key,
         safe_browsing_check_interval=safe_browsing_check_interval,
         backfill_enabled=backfill_enabled,

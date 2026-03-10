@@ -329,11 +329,16 @@ class BackfillScanner:
                 )
                 if self.settings.scanner_mode == "enforce" and tx_ids:
                     rules = json.loads(override.original_rules or "[]")
+                    any_blocked = False
                     for tid in tx_ids:
                         success = await self.gateway.block_data(
                             tid, hash_str, rules
                         )
                         self.metrics.record_block(success)
+                        if success:
+                            any_blocked = True
+                    if any_blocked:
+                        self.db.mark_blocked(hash_str)
                 stats["malicious"] += 1
                 return
 
@@ -424,6 +429,8 @@ class BackfillScanner:
                     if success:
                         file_blocked += 1
                         stats["blocked"] += 1
+                if file_blocked > 0:
+                    self.db.mark_blocked(hash_str)
 
             action = "dry_run"
             if self.settings.scanner_mode == "enforce":

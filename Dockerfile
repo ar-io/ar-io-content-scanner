@@ -12,12 +12,10 @@ RUN playwright install --with-deps chromium
 RUN useradd -m -u 1000 scanner
 
 COPY xgboost_model.pkl .
+COPY pyproject.toml .
 COPY src/ src/
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
-
-ARG SCANNER_VERSION=dev
-ENV SCANNER_VERSION=${SCANNER_VERSION}
 
 EXPOSE 3100
 

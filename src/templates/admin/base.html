@@ -67,7 +67,7 @@
           <span class="header-mode" :class="$store.health.mode === 'enforce' ? 'hdr-enforce' : 'hdr-dry-run'" x-text="$store.health.mode"></span>
         </template>
         <template x-if="$store.health.loaded">
-          <span class="header-version" x-text="'v' + $store.health.version"></span>
+          <span class="header-version" x-text="$store.health.version.match(/^\d/) ? 'v' + $store.health.version : $store.health.version"></span>
         </template>
         <span class="header-health">
           <span class="health-dot" :class="'dot-' + $store.health.status"></span>

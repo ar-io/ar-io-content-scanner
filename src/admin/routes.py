@@ -146,12 +146,13 @@ def build_admin_router(app_state) -> APIRouter:
         if ss and ss.get_path(content_hash) is not None:
             has_screenshot = True
 
-        # Look up Safe Browsing status
-        sb_row = db.conn.execute(
-            "SELECT safe_browsing_flagged FROM scan_verdicts WHERE content_hash = ?",
+        # Look up Safe Browsing and blocked status
+        extra_row = db.conn.execute(
+            "SELECT safe_browsing_flagged, blocked FROM scan_verdicts WHERE content_hash = ?",
             (content_hash,),
         ).fetchone()
-        sb_flagged = sb_row[0] if sb_row and sb_row[0] is not None else None
+        sb_flagged = extra_row[0] if extra_row and extra_row[0] is not None else None
+        blocked = bool(extra_row[1]) if extra_row and extra_row[1] is not None else False
 
         return {
             "content_hash": verdict.content_hash,
@@ -167,6 +168,7 @@ def build_admin_router(app_state) -> APIRouter:
             "has_screenshot": has_screenshot,
             "screenshot_url": f"/api/admin/screenshot/{content_hash}" if has_screenshot else None,
             "safe_browsing_flagged": bool(sb_flagged) if sb_flagged is not None else None,
+            "blocked": blocked,
         }
 
     @router.post("/api/admin/review/{content_hash}/confirm")
@@ -211,10 +213,7 @@ def build_admin_router(app_state) -> APIRouter:
             )
             if success:
                 blocked_tx_ids.append(verdict.tx_id)
-
-        # Clean up screenshot — admin has reviewed
-        if _state.screenshot:
-            _state.screenshot.delete(content_hash)
+                db.mark_blocked(content_hash)
 
         logger.info(
             "admin_confirm",
@@ -259,10 +258,7 @@ def build_admin_router(app_state) -> APIRouter:
         )
 
         db.update_verdict(content_hash, Verdict.CLEAN)
-
-        # Clean up screenshot — admin has reviewed
-        if _state.screenshot:
-            _state.screenshot.delete(content_hash)
+        db.mark_unblocked(content_hash)
 
         # In enforce mode, unblock content that was previously blocked
         unblocked = None
@@ -339,9 +335,7 @@ def build_admin_router(app_state) -> APIRouter:
                 )
                 if success:
                     blocked_tx_ids.append(verdict.tx_id)
-
-            if _state.screenshot:
-                _state.screenshot.delete(h)
+                    db.mark_blocked(h)
 
             succeeded += 1
 
@@ -407,9 +401,7 @@ def build_admin_router(app_state) -> APIRouter:
             )
 
             db.update_verdict(h, Verdict.CLEAN)
-
-            if _state.screenshot:
-                _state.screenshot.delete(h)
+            db.mark_unblocked(h)
 
             if settings.scanner_mode == "enforce":
                 gateway = _state.gateway
@@ -474,6 +466,8 @@ def build_admin_router(app_state) -> APIRouter:
                 blocked = await _state.gateway.block_data(
                     override.tx_id, content_hash, rules
                 )
+                if blocked:
+                    db.mark_blocked(content_hash)
             elif (
                 override.admin_verdict == "confirmed_malicious"
                 and original_verdict not in (Verdict.MALICIOUS,)
@@ -482,6 +476,8 @@ def build_admin_router(app_state) -> APIRouter:
                 unblocked = await _state.gateway.unblock_data(
                     override.tx_id, content_hash
                 )
+                if unblocked:
+                    db.mark_unblocked(content_hash)
 
         logger.info(
             "admin_revert",
