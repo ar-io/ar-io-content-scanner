@@ -48,6 +48,12 @@ def looks_like_html(content: bytes) -> bool:
     if head.startswith(b"\xef\xbb\xbf"):
         head = head[3:]
     head = head.lower()
+    # Strip XML declaration (<?xml ...?>) — XHTML pages start with this
+    # before the <html> or <!DOCTYPE> tag.
+    if head.startswith(b"<?xml"):
+        end = head.find(b"?>")
+        if end != -1:
+            head = head[end + 2:].lstrip()
     return any(head.startswith(sig) for sig in HTML_SIGNATURES)
 
 
@@ -430,14 +436,15 @@ class Scanner:
                 tx_id, content_hash, result
             )
 
-        # Capture screenshot for flagged content (fire-and-forget to avoid
-        # blocking the worker — capture takes seconds for page load + render)
+        # Capture screenshot BEFORE blocking — in enforce mode the gateway
+        # will return "Not Found" after blocking, so the screenshot must be
+        # taken while the content is still accessible.
         if (
             result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
             and content_hash
             and self.screenshot
         ):
-            asyncio.create_task(self._capture_screenshot(tx_id, content_hash))
+            await self._capture_screenshot(tx_id, content_hash)
 
         # Take action
         action = "passed"

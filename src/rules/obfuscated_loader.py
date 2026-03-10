@@ -5,7 +5,9 @@ from __future__ import annotations
 Signals (both required):
   A. Script using DOM injection (document.write, innerHTML, eval — including
      bracket-notation variants) with encoding functions (unescape, atob,
-     decodeURIComponent, fromCharCode — including bracket variants)
+     decodeURIComponent, fromCharCode — including bracket variants).
+     Scripts identified as bundler output (webpack, Parcel, Rollup, etc.)
+     are exempt — bundlers legitimately use eval() for source maps.
   B. Heavy encoding indicators: long base64 strings, hex escapes, unicode
      escapes, or fromCharCode chains
 
@@ -42,6 +44,24 @@ ENCODING_FUNCTIONS = [
     r"""String\s*\[\s*[\"']fromCharCode[\"']\s*\]""",
 ]
 
+# Bundler signatures — if any of these appear in a script, it's bundler
+# output (webpack, Parcel, Rollup, etc.), not hand-crafted obfuscation.
+# Phishing kits never ship module infrastructure.
+BUNDLER_SIGNATURES = [
+    r"__webpack_require__",
+    r"__webpack_modules__",
+    r"__webpack_exports__",
+    r"webpackChunk\w*",
+    r"webpackJsonp",
+    r"parcelRequire",
+    r"__NEXT_DATA__",
+    r"__vite_ssr_import__",
+    r"__vite_ssr_dynamic_import__",
+    r"__turbopack_modules__",
+    r"__turbopack_require__",
+    r"System\.register\s*\(",
+]
+
 BASE64_PATTERN = r"[A-Za-z0-9+/=]{100,8192}"
 # URL-safe base64 variant (uses - and _ instead of + and /)
 BASE64_URLSAFE_PATTERN = r"[A-Za-z0-9\-_=]{100,8192}"
@@ -68,12 +88,19 @@ class ObfuscatedLoaderRule(Rule):
         scripts = soup.find_all("script")
 
         # Signal A: script with DOM injection + encoding
+        # Scripts with bundler signatures are exempt — bundlers like webpack
+        # legitimately use eval() for dev source maps and innerHTML for DOM
+        # manipulation. Phishing kits use hand-crafted obfuscation instead.
         signal_a = False
+        is_bundler = False
         injection_found: list[str] = []
         encoding_found: list[str] = []
 
         for script in scripts:
             text = script.get_text()
+            if any(re.search(p, text) for p in BUNDLER_SIGNATURES):
+                is_bundler = True
+                continue
             matched_injection = [
                 p for p in DOM_INJECTION_PATTERNS if re.search(p, text)
             ]
@@ -85,6 +112,13 @@ class ObfuscatedLoaderRule(Rule):
                 injection_found.extend(matched_injection)
                 encoding_found.extend(matched_encoding)
                 break
+
+        # Also check raw HTML for bundler patterns — when HTML is truncated
+        # mid-script (e.g. large webpack bundles exceeding MAX_SCAN_BYTES),
+        # BeautifulSoup may not parse the script content, but the bundler
+        # boilerplate is still present in the raw HTML string.
+        if not is_bundler:
+            is_bundler = any(re.search(p, html) for p in BUNDLER_SIGNATURES)
 
         # Signal B: heavy encoding indicators
         all_scripts_text = " ".join(s.get_text() for s in scripts)
@@ -109,7 +143,7 @@ class ObfuscatedLoaderRule(Rule):
 
         return RuleResult(
             rule_name=self.name,
-            triggered=signal_a and signal_b,
+            triggered=signal_a and signal_b and not is_bundler,
             signals={
                 "dom_injection_patterns": injection_found,
                 "encoding_functions": encoding_found,
@@ -117,5 +151,6 @@ class ObfuscatedLoaderRule(Rule):
                 "has_hex_escapes": has_hex_escapes,
                 "has_unicode_escapes": has_unicode_escapes,
                 "has_charcode_chain": has_charcode_chain,
+                "is_bundler": is_bundler,
             },
         )

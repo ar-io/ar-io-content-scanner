@@ -232,6 +232,37 @@ Function(atob(encoded))();
 </body>
 </html>"""
 
+WEBPACK_EVAL_BUNDLE = """<!DOCTYPE html>
+<html>
+<head><title>My App</title></head>
+<body>
+<div id="app"></div>
+<script>
+var __webpack_modules__ = ({
+"./src/index.js": (function(module, __webpack_exports__, __webpack_require__) {
+eval("var util = __webpack_require__('./src/util.js');\\nvar encoded = \\"QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB\\";\\ndocument.getElementById('app').innerHTML = atob(encoded);\\n//# sourceURL=webpack-internal:///./src/index.js");
+})
+});
+var __webpack_require__ = function(id) { return __webpack_modules__[id](); };
+</script>
+</body>
+</html>"""
+
+PARCEL_BUNDLE = """<!DOCTYPE html>
+<html>
+<body>
+<script>
+var parcelRequire;
+(function(modules){
+  var cache = {};
+  function require(id) { return cache[id] || (cache[id] = modules[id]()); }
+  var data = "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB";
+  document.write(atob(data));
+})(parcelRequire);
+</script>
+</body>
+</html>"""
+
 PROTOCOL_RELATIVE_EXFIL = """<!DOCTYPE html>
 <html>
 <head><title>Login</title></head>

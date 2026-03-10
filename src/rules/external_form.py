@@ -47,11 +47,22 @@ STRONG_EXFIL_PATTERNS = [
 ]
 
 # Patterns that indicate script code is reading credential input values
-# (used to corroborate fetch() as credential exfiltration)
+# (used to corroborate fetch() as credential exfiltration).
+# Matches DOM element lookups followed by .value access, but NOT plain
+# variable.value (e.g. slider.value, volume.value) which is common in
+# legitimate apps. On static Arweave pages, reading form input values
+# via DOM APIs and exfiltrating them externally is inherently suspicious.
 CREDENTIAL_ACCESS_PATTERNS = [
-    r"\.value\b",           # reading input.value
-    r"\[[\"']value[\"']\]", # input["value"] / input['value']
-    r"\bFormData\b",        # packaging form data
+    # getElementById("x").value or getElementById("x")["value"]
+    r"""getElementById\s*\([^)]+\)\s*\.?\s*(?:\[\s*['"]\s*)?value""",
+    # querySelector/querySelectorAll("x").value
+    r"""querySelector\w*\s*\([^)]+\)\s*\.?\s*(?:\[\s*['"]\s*)?value""",
+    # getElementsByName/ClassName/TagName("x")[n].value
+    r"""getElementsBy\w+\s*\([^)]+\)\s*(?:\[\d+\]\s*)?\.?\s*(?:\[\s*['"]\s*)?value""",
+    # FormData packaging form data — inherently captures all fields
+    r"\bFormData\b",
+    # jQuery val() — $("selector").val()
+    r"""\$\s*\([^)]+\)\s*\.\s*val\s*\(""",
 ]
 
 EXTERNAL_URL_PATTERN = r"(?:https?|wss?)://[^\s\"'`)>]{1,2048}"

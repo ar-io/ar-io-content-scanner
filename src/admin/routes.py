@@ -196,6 +196,12 @@ def build_admin_router(app_state) -> APIRouter:
             notes=notes,
         )
 
+        # Update verdict to MALICIOUS for consistency with dismiss
+        # (which updates to CLEAN). Ensures history/export/dashboard
+        # reflect the admin's decision.
+        if verdict.verdict != Verdict.MALICIOUS:
+            db.update_verdict(content_hash, Verdict.MALICIOUS)
+
         blocked_tx_ids = []
         if settings.scanner_mode == "enforce":
             gateway = _state.gateway
@@ -321,6 +327,9 @@ def build_admin_router(app_state) -> APIRouter:
                 original_ml_score=verdict.ml_score,
                 notes=notes,
             )
+
+            if verdict.verdict != Verdict.MALICIOUS:
+                db.update_verdict(h, Verdict.MALICIOUS)
 
             if settings.scanner_mode == "enforce":
                 gateway = _state.gateway

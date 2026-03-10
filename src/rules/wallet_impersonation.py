@@ -19,6 +19,8 @@ from src.models import RuleResult
 from src.rules.base import Rule
 from src.rules.utils import has_password_like_input as _has_password_like_input_full
 
+# Brands that are unambiguously crypto wallet names (no common English meanings).
+# Matched via substring on normalized title/heading text.
 WALLET_BRANDS = [
     "metamask",
     "phantom",
@@ -26,7 +28,6 @@ WALLET_BRANDS = [
     "trezor",
     "trust wallet",
     "coinbase wallet",
-    "exodus",
     "rabby",
     "walletconnect",
     "blockchain.com",
@@ -34,6 +35,13 @@ WALLET_BRANDS = [
     "binance",
     "keplr",
     "solflare",
+]
+
+# Brands that are common English words ("rainbow", "exodus", "backpack").
+# Require "wallet" to appear nearby in the same element to avoid matching
+# unrelated content like art galleries, religious texts, or e-commerce.
+AMBIGUOUS_BRANDS = [
+    "exodus",
     "backpack",
     "rainbow",
 ]
@@ -126,6 +134,14 @@ class WalletImpersonationRule(Rule):
             # Normalize brand too (strip spaces) for consistent comparison
             if brand.replace(" ", "") in prominent_normalized
         ]
+        # Ambiguous brands (common English words) only match when "wallet"
+        # appears in the same prominent text, confirming crypto context.
+        if "wallet" in prominent_normalized:
+            matched_brands.extend(
+                brand
+                for brand in AMBIGUOUS_BRANDS
+                if brand in prominent_normalized
+            )
         signal_a = len(matched_brands) > 0
 
         # Signal B: credential capture — password input (including proxies)

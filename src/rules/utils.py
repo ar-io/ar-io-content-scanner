@@ -4,9 +4,13 @@ import re
 
 from bs4 import BeautifulSoup
 
-# Attribute names/values that indicate a password-like purpose
+# Attribute names/values that indicate a password-like purpose.
+# Uses letter boundaries ((?<![a-zA-Z]) / (?![a-zA-Z])) instead of \b
+# to avoid substring matches like "compass", "bypass", "passenger" while
+# still matching underscored compound names like "password_input" or
+# "user_password" (since \b treats _ as a word character).
 _PASSWORD_ATTR_RE = re.compile(
-    r"pass(?:word)?|pwd|passwd|secret.?key|private.?key",
+    r"(?<![a-zA-Z])(?:pass(?:word|wd|code)?|pwd|passwd|secret.?key|private.?key)(?![a-zA-Z])",
     re.IGNORECASE,
 )
 

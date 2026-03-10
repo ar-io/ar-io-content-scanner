@@ -400,7 +400,16 @@ class BackfillScanner:
         self.metrics.record_scan(result.verdict, result.scan_duration_ms)
         stats["scanned"] += 1
 
-        # 7. Handle verdict
+        # 7. Capture screenshot BEFORE blocking — content must still be
+        # accessible on the gateway when Playwright loads it.
+        if (
+            result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
+            and tx_id != "backfill"
+            and self.screenshot
+        ):
+            await self._capture_screenshot(tx_id, hash_str)
+
+        # 8. Handle verdict
         if result.verdict == Verdict.MALICIOUS:
             stats["malicious"] += 1
 
@@ -446,14 +455,6 @@ class BackfillScanner:
                     "ml_score": result.ml_score,
                 },
             )
-
-        # Capture screenshot for flagged content (fire-and-forget)
-        if (
-            result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
-            and tx_id != "backfill"
-            and self.screenshot
-        ):
-            asyncio.create_task(self._capture_screenshot(tx_id, hash_str))
 
         if result.verdict not in (Verdict.MALICIOUS, Verdict.SUSPICIOUS):
             stats["clean"] += 1

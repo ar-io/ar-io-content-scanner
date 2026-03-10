@@ -16,6 +16,7 @@ from tests.fixtures import (
     OBFUSCATED_FUNCTION_CONSTRUCTOR,
     OBFUSCATED_LOADER_PHISHING,
     OBFUSCATED_UNICODE_ESCAPES,
+    PARCEL_BUNDLE,
     PASSWORD_CONTENTEDITABLE_EXFIL,
     PASSWORD_TEXTAREA_EXFIL,
     PROTOCOL_RELATIVE_EXFIL,
@@ -27,6 +28,7 @@ from tests.fixtures import (
     WALLET_IMPERSONATION_PHISHING,
     WALLET_SOFT_HYPHEN_PHISHING,
     WALLET_SPLIT_BRAND_PHISHING,
+    WEBPACK_EVAL_BUNDLE,
     WEBSOCKET_EXFIL,
 )
 
@@ -252,6 +254,33 @@ class TestExternalFormRule:
         assert result.triggered is True
         assert result.signals["fetch_with_creds"] is True
 
+    def test_fetch_with_non_credential_value_does_not_trigger(self):
+        """fetch() + slider.value (not a DOM lookup) should not trigger.
+        Regression test for false positives on apps with sliders/controls."""
+        html = """<html><body>
+        <input type="password" name="pw">
+        <script>
+        var vol = slider.value;
+        fetch("https://api.example.com/settings", {method: "POST", body: vol});
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+
+    def test_compass_id_does_not_trigger(self):
+        """Element with 'compass' in ID should not be treated as password.
+        Regression test for substring false positive on 'pass' in 'compass'."""
+        html = """<html><body>
+        <textarea id="compass_notes" placeholder="Navigation notes"></textarea>
+        <form action="https://example.com/submit">
+            <button>Submit</button>
+        </form>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+
 
 class TestWalletImpersonationRule:
     def setup_method(self):
@@ -328,6 +357,37 @@ class TestWalletImpersonationRule:
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
         assert result.triggered is True
+
+    def test_rainbow_without_wallet_context_does_not_trigger(self):
+        """'Rainbow' is a common word — should not trigger without wallet context.
+        Regression test for false positives on art galleries, games, etc."""
+        html = """<html><head><title>Rainbow Art Gallery</title></head>
+        <body><h1>Rainbow Collection</h1>
+        <input type="password" placeholder="Admin password">
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+
+    def test_rainbow_wallet_with_context_triggers(self):
+        """'Rainbow' + 'wallet' in title = crypto wallet impersonation."""
+        html = """<html><head><title>Rainbow Wallet</title></head>
+        <body><h1>Rainbow Wallet Login</h1>
+        <input type="password" placeholder="Enter password">
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is True
+
+    def test_exodus_without_wallet_context_does_not_trigger(self):
+        """'Exodus' is a common word — should not trigger without wallet context."""
+        html = """<html><head><title>The Book of Exodus</title></head>
+        <body><h1>Exodus Chapter 1</h1>
+        <input type="password" placeholder="Access code">
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
 
 
 class TestObfuscatedLoaderRule:
@@ -413,3 +473,32 @@ class TestObfuscatedLoaderRule:
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
         assert result.triggered is True
+
+    def test_webpack_eval_bundle_does_not_trigger(self):
+        """Webpack dev bundles use eval() for source maps — not obfuscation.
+        Regression test for false positive on legitimate dApps."""
+        soup = parse_html(WEBPACK_EVAL_BUNDLE)
+        result = self.rule.evaluate(WEBPACK_EVAL_BUNDLE, soup)
+        assert result.triggered is False
+        assert result.signals["is_bundler"] is True
+
+    def test_parcel_bundle_does_not_trigger(self):
+        """Parcel bundles use parcelRequire — not obfuscation."""
+        soup = parse_html(PARCEL_BUNDLE)
+        result = self.rule.evaluate(PARCEL_BUNDLE, soup)
+        assert result.triggered is False
+        assert result.signals["is_bundler"] is True
+
+    def test_webpack_in_raw_html_does_not_trigger(self):
+        """Bundler patterns in raw HTML (truncated mid-script) should be
+        detected even when BeautifulSoup can't parse the script content."""
+        html = """<html><body>
+        <script>
+        var __webpack_modules__ = ({
+        "./src/app.js": function(module) {
+        eval("var x = atob('QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB');"""
+        # No closing </script> — simulates truncation at MAX_SCAN_BYTES
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+        assert result.signals["is_bundler"] is True

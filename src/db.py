@@ -169,10 +169,18 @@ class ScannerDB:
         scanner_version: str,
         source: str = "local",
     ) -> None:
+        # Use INSERT ... ON CONFLICT to preserve safe_browsing_flagged.
+        # Plain INSERT OR REPLACE would delete and re-insert the row,
+        # silently nulling columns not in the INSERT list.
         self.conn.execute(
-            "INSERT OR REPLACE INTO scan_verdicts "
+            "INSERT INTO scan_verdicts "
             "(content_hash, tx_id, verdict, matched_rules, ml_score, "
-            "scanned_at, scanner_version, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "scanned_at, scanner_version, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(content_hash) DO UPDATE SET "
+            "tx_id = excluded.tx_id, verdict = excluded.verdict, "
+            "matched_rules = excluded.matched_rules, ml_score = excluded.ml_score, "
+            "scanned_at = excluded.scanned_at, scanner_version = excluded.scanner_version, "
+            "source = excluded.source",
             (
                 content_hash,
                 tx_id,

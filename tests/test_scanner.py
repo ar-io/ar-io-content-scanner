@@ -66,6 +66,15 @@ class TestContentTypeDetection:
         assert looks_like_html(b'{"json": true}') is False
         assert looks_like_html(b"plain text content") is False
 
+    def test_xhtml_with_xml_declaration(self):
+        """XHTML pages start with <?xml ...?> — should still be detected."""
+        assert looks_like_html(b'<?xml version="1.0"?>\n<!doctype html>') is True
+        assert looks_like_html(b'<?xml version="1.0" encoding="UTF-8"?>\n<html>') is True
+
+    def test_xml_declaration_without_html(self):
+        """Non-HTML XML should not be treated as HTML."""
+        assert looks_like_html(b'<?xml version="1.0"?>\n<rss>') is False
+
 
 class TestWebhookProcessing:
     @pytest.mark.asyncio

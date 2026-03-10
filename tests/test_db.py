@@ -46,6 +46,25 @@ class TestVerdictCache:
         assert cached.verdict == Verdict.MALICIOUS
         assert cached.tx_id == "tx2"
 
+    def test_save_verdict_preserves_safe_browsing_flag(self, db):
+        """save_verdict should not clear safe_browsing_flagged on upsert."""
+        db.save_verdict("h1", "tx1", Verdict.SUSPICIOUS, "[]", 0.9, "0.1.0")
+        db.update_safe_browsing_status("h1", True)
+        # Verify flag is set
+        row = db.conn.execute(
+            "SELECT safe_browsing_flagged FROM scan_verdicts WHERE content_hash = ?",
+            ("h1",),
+        ).fetchone()
+        assert row[0] == 1
+        # Re-save verdict (simulates re-scan or feed import)
+        db.save_verdict("h1", "tx1", Verdict.MALICIOUS, '["r1"]', 0.9, "0.2.0")
+        # Flag should still be set
+        row = db.conn.execute(
+            "SELECT safe_browsing_flagged FROM scan_verdicts WHERE content_hash = ?",
+            ("h1",),
+        ).fetchone()
+        assert row[0] == 1
+
 
 class TestQueue:
     def test_enqueue_and_dequeue(self, db):
