@@ -527,7 +527,54 @@ Set `GATEWAY_PUBLIC_URL` to your gateway's public URL. Without it, the periodic 
 If you have `SAFE_BROWSING_API_KEY` set, check that the key is valid and has the Safe Browsing API enabled. Check network connectivity to `safebrowsing.googleapis.com`. Note that errors are fail-open and do not affect scanning. Domain monitoring via the Transparency Report works independently of the API key.
 
 **Gateway domain flagged:**
-Review the admin dashboard's review queue for malicious content. Confirm and block any phishing pages. After blocking, request a review via [Google Search Console](https://search.google.com/search-console).
+Your gateway is on Google's blocklist — users will see browser warnings. Follow the steps in [Clearing a Google Safe Browsing Flag](#clearing-a-google-safe-browsing-flag) below.
+
+### Clearing a Google Safe Browsing Flag
+
+If your gateway domain gets flagged by Google Safe Browsing (the dashboard shows a red warning banner), follow these steps to get unflagged. **There is no API for this — it requires manual action through Google Search Console.**
+
+#### Step 1: Block all malicious content
+
+1. Open the admin dashboard and go to the **Review Queue**
+2. Review every flagged item — **Confirm** anything that is genuinely malicious (this blocks it on the gateway)
+3. **Dismiss** any false positives (this unblocks them)
+4. If you haven't already, enable enforce mode (`SCANNER_MODE=enforce`) so new phishing content is auto-blocked
+5. If available, enable **Backfill** to scan and block malicious content that was cached before the scanner was deployed
+
+#### Step 2: Verify your domain in Google Search Console
+
+1. Go to [Google Search Console](https://search.google.com/search-console)
+2. Click **Add Property** and enter your gateway domain (e.g., `https://gatewaypie.com`)
+3. Verify ownership using one of the available methods:
+   - **DNS TXT record** (recommended) — add the provided TXT record to your domain's DNS
+   - **HTML file** — upload a verification file to your gateway's root (may not work on ar.io gateways)
+   - **DNS CNAME record** — add a CNAME record to your DNS
+
+#### Step 3: Review the Security Issues report
+
+1. In Search Console, go to **Security & Manual Actions > Security Issues**
+2. Google will list the specific URLs it found to be malicious (e.g., social engineering, phishing)
+3. Verify that all listed URLs are now blocked by your scanner (they should return "Not Found" on your gateway)
+
+#### Step 4: Request a review
+
+1. In the Security Issues panel, click **"Request a Review"**
+2. Describe the steps you've taken:
+   - "We have deployed an automated content scanner that detects and blocks phishing content served through our Arweave gateway. All flagged URLs have been blocked and now return 404. The scanner runs continuously in enforce mode to prevent future phishing content from being served."
+3. Submit the request
+
+#### Step 5: Wait for Google's response
+
+- Google typically processes review requests within **72 hours**, though it can take up to a week
+- You'll receive a notification in Search Console when the review is complete
+- If the review is rejected, check for any remaining malicious URLs that were missed and repeat the process
+
+#### Tips
+
+- **Check your status anytime**: Visit `https://transparencyreport.google.com/safe-browsing/search?url=yourdomain.com` to see your current Safe Browsing status
+- **Don't request multiple reviews**: Submitting repeated requests before the first one is processed can delay the review
+- **Enable the verdict feed**: If you operate multiple gateways, share detections so a phishing page blocked on one gateway is immediately blocked on all of them
+- **Set up domain monitoring**: Ensure `GATEWAY_PUBLIC_URL` is configured so the scanner's periodic Safe Browsing check alerts you promptly if your domain gets re-flagged
 
 ## Sidecar Downtime
 
