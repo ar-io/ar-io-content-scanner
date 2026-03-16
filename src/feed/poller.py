@@ -148,6 +148,8 @@ class FeedPoller:
 
             # Update sync cursor after each page
             if cursor:
+                prev_since = since
+                prev_hash = after_hash
                 since = cursor.get("scanned_at", since)
                 after_hash = cursor.get("content_hash", after_hash)
                 self.db.save_feed_sync_state(
@@ -156,6 +158,13 @@ class FeedPoller:
                     last_content_hash=after_hash,
                     imported_count_delta=page_imported,
                 )
+                # Break if cursor didn't advance to avoid spinning
+                if since == prev_since and after_hash == prev_hash:
+                    logger.warning(
+                        "feed_cursor_stalled",
+                        extra={"peer": peer_url, "since": since},
+                    )
+                    break
             elif not verdicts:
                 # No new verdicts, update last_sync_at only
                 self.db.save_feed_sync_state(
@@ -165,8 +174,14 @@ class FeedPoller:
                     imported_count_delta=0,
                 )
 
-            # Stop if no more pages
+            # Stop if no more pages or empty page with has_more (degenerate)
             if not result.get("has_more", False):
+                break
+            if not verdicts:
+                logger.warning(
+                    "feed_empty_page_with_has_more",
+                    extra={"peer": peer_url},
+                )
                 break
 
         if stats["imported"] > 0:

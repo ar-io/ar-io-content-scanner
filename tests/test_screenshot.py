@@ -96,6 +96,7 @@ class TestScreenshotService:
         mock_context.new_page.return_value = mock_page
         mock_browser = AsyncMock()
         mock_browser.new_context.return_value = mock_context
+        mock_browser.is_connected = MagicMock(return_value=True)
 
         self.service._browser = mock_browser
 
@@ -137,6 +138,7 @@ class TestScreenshotService:
         mock_context.new_page.side_effect = Exception("Browser crash")
         mock_browser = AsyncMock()
         mock_browser.new_context.return_value = mock_context
+        mock_browser.is_connected = MagicMock(return_value=True)
 
         self.service._browser = mock_browser
 
@@ -155,6 +157,7 @@ class TestScreenshotService:
         )
         mock_pw_instance = AsyncMock()
         mock_browser = AsyncMock()
+        mock_browser.is_connected = MagicMock(return_value=True)
         mock_pw_instance.chromium.launch.return_value = mock_browser
 
         mock_pw_cm = MagicMock()

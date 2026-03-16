@@ -73,7 +73,44 @@ class ScreenshotService:
 
     @property
     def available(self) -> bool:
-        return self._browser is not None
+        return self._browser is not None and self._browser.is_connected()
+
+    async def _restart_browser(self) -> bool:
+        """Attempt to restart a crashed browser. Returns True on success."""
+        logger.warning("Browser disconnected, attempting restart")
+        # Clean up stale state
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+        if self._playwright:
+            try:
+                await self._playwright.stop()
+            except Exception:
+                pass
+        self._browser = None
+        self._playwright = None
+
+        try:
+            from playwright.async_api import async_playwright
+
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                ],
+            )
+            logger.info("Browser restarted successfully")
+            return True
+        except Exception:
+            logger.exception("Browser restart failed — screenshots disabled")
+            self._browser = None
+            return False
 
     def get_path(self, content_hash: str) -> Path | None:
         path = self.screenshot_dir / f"{content_hash}.jpg"
@@ -110,8 +147,11 @@ class ScreenshotService:
         return deleted
 
     async def capture(self, tx_id: str, content_hash: str) -> bool:
-        if not self.available:
+        if self._browser is None:
             return False
+        if not self._browser.is_connected():
+            if not await self._restart_browser():
+                return False
 
         dest = self.screenshot_dir / f"{content_hash}.jpg"
         if dest.is_file():

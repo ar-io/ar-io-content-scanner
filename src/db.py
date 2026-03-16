@@ -289,7 +289,9 @@ class ScannerDB:
     def purge_old(self, max_age_seconds: int = 3600) -> int:
         cutoff = int(time.time()) - max_age_seconds
         cursor = self.conn.execute(
-            "DELETE FROM scan_queue WHERE received_at < ?", (cutoff,)
+            "DELETE FROM scan_queue WHERE received_at < ? "
+            "AND status NOT LIKE 'processing:%'",
+            (cutoff,),
         )
         self.conn.commit()
         return cursor.rowcount

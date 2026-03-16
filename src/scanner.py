@@ -401,11 +401,14 @@ class Scanner:
         # Parse and scan — run CPU-bound work off the event loop
         html = content.decode("utf-8", errors="replace")
         loop = asyncio.get_running_loop()
-        soup: BeautifulSoup = await loop.run_in_executor(
-            None, parse_html, html
+        timeout_s = self.settings.scan_timeout_ms / 1000
+        soup: BeautifulSoup = await asyncio.wait_for(
+            loop.run_in_executor(None, parse_html, html),
+            timeout=timeout_s,
         )
-        result = await loop.run_in_executor(
-            None, self.engine.evaluate, html, soup
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, self.engine.evaluate, html, soup),
+            timeout=timeout_s,
         )
 
         # Cache verdict
