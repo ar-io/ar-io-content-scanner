@@ -1,7 +1,7 @@
 services:
   content-scanner:
     build: .
-    container_name: content-scanner
+    container_name: ar-io-content-scanner
     ports:
       - "3100:3100"
     environment:
@@ -20,7 +20,7 @@ services:
       VERDICT_FEED_ON_DEMAND: "${VERDICT_FEED_ON_DEMAND:-true}"
       VERDICT_FEED_REQUEST_TIMEOUT_MS: "${VERDICT_FEED_REQUEST_TIMEOUT_MS:-5000}"
       SAFE_BROWSING_API_KEY: "${SAFE_BROWSING_API_KEY:-}"
-      SAFE_BROWSING_CHECK_INTERVAL: "${SAFE_BROWSING_CHECK_INTERVAL:-300}"
+      SAFE_BROWSING_CHECK_INTERVAL: "${SAFE_BROWSING_CHECK_INTERVAL:-3600}"
       BACKFILL_ENABLED: "${BACKFILL_ENABLED:-false}"
       BACKFILL_DATA_PATH: "${BACKFILL_DATA_PATH:-}"
       BACKFILL_GATEWAY_DB_PATH: "${BACKFILL_GATEWAY_DB_PATH:-}"

@@ -252,7 +252,7 @@ def main() -> None:
 
     settings = load_settings()
     app = build_app(settings)
-    uvicorn.run(app, host="0.0.0.0", port=settings.scanner_port)
+    uvicorn.run(app, host="0.0.0.0", port=settings.scanner_port, log_config=None)
 
 
 if __name__ == "__main__":

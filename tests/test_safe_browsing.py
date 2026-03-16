@@ -696,7 +696,7 @@ class TestSafeBrowsingAdminAPI:
         assert "safe_browsing" in data
         assert data["safe_browsing"]["enabled"] is True
         assert data["safe_browsing"]["api_key_set"] is True
-        assert data["safe_browsing"]["check_interval"] == 300
+        assert data["safe_browsing"]["check_interval"] == 3600
 
 
 class TestSafeBrowsingNoApiKey:
@@ -775,7 +775,7 @@ class TestSafeBrowsingConfig:
             admin_api_key="key",
         )
         assert s.safe_browsing_api_key == ""
-        assert s.safe_browsing_check_interval == 300
+        assert s.safe_browsing_check_interval == 3600
 
     def test_custom_settings(self):
         s = Settings(

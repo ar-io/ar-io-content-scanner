@@ -140,7 +140,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `VERDICT_FEED_ON_DEMAND` | No | `true` | Check peers before scanning locally |
 | `VERDICT_FEED_REQUEST_TIMEOUT_MS` | No | `5000` | Timeout for peer API requests |
 | `SAFE_BROWSING_API_KEY` | No | -- | Google Safe Browsing API key (optional, enables URL-level checks via Lookup API) |
-| `SAFE_BROWSING_CHECK_INTERVAL` | No | `300` | Seconds between periodic domain + URL monitoring (min 60) |
+| `SAFE_BROWSING_CHECK_INTERVAL` | No | `3600` | Seconds between periodic domain + URL monitoring (min 60) |
 
 ## Admin Dashboard
 

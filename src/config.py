@@ -82,7 +82,7 @@ class Settings:
 
     # Google Safe Browsing / Web Risk API
     safe_browsing_api_key: str = ""
-    safe_browsing_check_interval: int = 300  # seconds between periodic checks
+    safe_browsing_check_interval: int = 3600  # seconds between periodic checks
 
     # Backfill: proactive filesystem sweep
     backfill_enabled: bool = False
@@ -188,7 +188,7 @@ def load_settings() -> Settings:
     # Safe Browsing settings
     safe_browsing_api_key = os.environ.get("SAFE_BROWSING_API_KEY", "")
     safe_browsing_check_interval = int(
-        os.environ.get("SAFE_BROWSING_CHECK_INTERVAL", "300")
+        os.environ.get("SAFE_BROWSING_CHECK_INTERVAL", "3600")
     )
     if safe_browsing_check_interval < 60:
         raise ValueError("SAFE_BROWSING_CHECK_INTERVAL must be >= 60")

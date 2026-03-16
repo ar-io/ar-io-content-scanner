@@ -244,7 +244,7 @@ Content Scanner does not include a built-in notification system. To get alerted 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SAFE_BROWSING_API_KEY` | *(none)* | Google Safe Browsing API key (optional, enables URL-level Lookup API checks) |
-| `SAFE_BROWSING_CHECK_INTERVAL` | `300` | Seconds between periodic domain + URL monitoring (min 60) |
+| `SAFE_BROWSING_CHECK_INTERVAL` | `3600` | Seconds between periodic domain + URL monitoring (min 60) |
 
 ### Screenshots
 
@@ -468,7 +468,7 @@ Optionally, you can add a `SAFE_BROWSING_API_KEY` to enable URL-level checks via
 
 ### Domain Monitoring (Automatic)
 
-A background loop checks your gateway domain every `SAFE_BROWSING_CHECK_INTERVAL` seconds (default: 300). This detects site-level flags like SOCIAL_ENGINEERING, MALWARE, and UNWANTED_SOFTWARE.
+A background loop checks your gateway domain every `SAFE_BROWSING_CHECK_INTERVAL` seconds (default: 3600). This detects site-level flags like SOCIAL_ENGINEERING, MALWARE, and UNWANTED_SOFTWARE.
 
 `GATEWAY_PUBLIC_URL` must be set for domain monitoring to work — without it, the monitor loop logs a warning and exits.
 

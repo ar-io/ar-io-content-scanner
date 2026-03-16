@@ -166,7 +166,7 @@
           <template x-if="!item.admin_override && item.blocked">
             <span style="font-size: 0.8rem; color: var(--color-gray); font-weight: 600;">Blocked by scanner</span>
           </template>
-          <template x-if="!item.admin_override && !item.blocked">
+          <template x-if="!item.admin_override">
             <button class="btn btn-danger btn-sm" @click="promptConfirm(item.content_hash)">
               Confirm Malicious
             </button>
@@ -459,9 +459,7 @@
               <template x-if="detail.blocked">
                 <span style="font-size: 0.85rem; color: var(--color-gray); font-weight: 600;">Blocked by scanner</span>
               </template>
-              <template x-if="!detail.blocked">
-                <button class="btn btn-danger" @click="promptConfirm(detail.content_hash); closeModal();">Confirm Malicious</button>
-              </template>
+              <button class="btn btn-danger" @click="promptConfirm(detail.content_hash); closeModal();">Confirm Malicious</button>
               <button class="btn btn-outline" @click="promptDismiss(detail.content_hash); closeModal();">Dismiss (False Positive)</button>
             </div>
           </template>

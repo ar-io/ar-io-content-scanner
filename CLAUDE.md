@@ -118,7 +118,7 @@ Verdict feed: `VERDICT_API_KEY` (enables feed feature), `VERDICT_FEED_URLS` (com
 
 Backfill: `BACKFILL_ENABLED` (false), `BACKFILL_DATA_PATH` (required if enabled), `BACKFILL_GATEWAY_DB_PATH` (optional, for hash→TX ID lookups), `BACKFILL_RATE` (5 files/sec), `BACKFILL_INTERVAL_HOURS` (24)
 
-Safe Browsing: `SAFE_BROWSING_API_KEY` (optional — enables per-URL Lookup API checks; domain monitoring via Transparency Report works without it), `SAFE_BROWSING_CHECK_INTERVAL` (300s, min 60 — periodic domain + URL monitoring interval)
+Safe Browsing: `SAFE_BROWSING_API_KEY` (optional — enables per-URL Lookup API checks; domain monitoring via Transparency Report works without it), `SAFE_BROWSING_CHECK_INTERVAL` (3600s, min 60 — periodic domain + URL monitoring interval)
 
 ## Testing Patterns
 

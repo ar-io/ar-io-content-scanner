@@ -6,6 +6,14 @@ import sys
 from pythonjsonlogger import jsonlogger
 
 
+class _HealthFilter(logging.Filter):
+    """Suppress noisy /health access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return '"GET /health' not in msg
+
+
 def configure_logging(level: str) -> None:
     handler = logging.StreamHandler(sys.stdout)
     formatter = jsonlogger.JsonFormatter(
@@ -25,4 +33,6 @@ def configure_logging(level: str) -> None:
 
     # Quiet noisy libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+    # Filter out /health spam from uvicorn access logs
+    logging.getLogger("uvicorn.access").addFilter(_HealthFilter())
