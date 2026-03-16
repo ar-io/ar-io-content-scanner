@@ -81,12 +81,18 @@ class _StructuredTextFormatter(logging.Formatter):
         return line
 
 
-class _HealthFilter(logging.Filter):
-    """Suppress noisy /health access logs."""
+class _AccessLogFilter(logging.Filter):
+    """Suppress noisy polling endpoints from uvicorn access logs."""
+
+    _SUPPRESSED = (
+        '"GET /health',
+        '"GET /api/admin/stats',
+        '"GET /metrics',
+    )
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
-        return '"GET /health' not in msg
+        return not any(path in msg for path in self._SUPPRESSED)
 
 
 def configure_logging(level: str, fmt: str = "text") -> None:
@@ -115,4 +121,4 @@ def configure_logging(level: str, fmt: str = "text") -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     # Filter out /health spam from uvicorn access logs
-    logging.getLogger("uvicorn.access").addFilter(_HealthFilter())
+    logging.getLogger("uvicorn.access").addFilter(_AccessLogFilter())
