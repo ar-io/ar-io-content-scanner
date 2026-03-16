@@ -62,6 +62,7 @@ class Settings:
 
     # Logging
     log_level: str = "info"
+    log_format: str = "text"  # "text" (human-readable) or "json"
 
     # Scanner version
     scanner_version: str = "0.1.0"
@@ -105,6 +106,12 @@ def load_settings() -> Settings:
     if mode not in ("dry-run", "enforce"):
         raise ValueError(
             f"SCANNER_MODE must be 'dry-run' or 'enforce', got '{mode}'"
+        )
+
+    log_format = os.environ.get("LOG_FORMAT", "text").lower()
+    if log_format not in ("text", "json"):
+        raise ValueError(
+            f"LOG_FORMAT must be 'text' or 'json', got '{log_format}'"
         )
 
     admin_ui_enabled = (
@@ -232,6 +239,7 @@ def load_settings() -> Settings:
         scan_timeout_ms=scan_timeout_ms,
         db_path=os.environ.get("DB_PATH", "/app/data/scanner.db"),
         log_level=os.environ.get("LOG_LEVEL", "info"),
+        log_format=log_format,
         scanner_version=os.environ.get("SCANNER_VERSION", "") or PROJECT_VERSION,
         verdict_api_key=verdict_api_key,
         verdict_feed_urls=verdict_feed_urls,

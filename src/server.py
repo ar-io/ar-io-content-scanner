@@ -29,7 +29,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = load_settings()
 
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_format)
 
     db = ScannerDB(settings.db_path)
     metrics = ScanMetrics()

@@ -108,7 +108,7 @@ Arweave content is static with no server-side backend. Password forms posting to
 
 Required: `GATEWAY_URL`, `ADMIN_API_KEY`, `SCANNER_ADMIN_KEY`
 
-Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
+Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `LOG_FORMAT` (text|json, default: text — "text" for human-readable Docker logs, "json" for log aggregation), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
 
 Rule toggles (all default true): `RULE_SEED_PHRASE`, `RULE_EXTERNAL_CREDENTIAL_FORM`, `RULE_WALLET_IMPERSONATION`, `RULE_OBFUSCATED_LOADER`
 

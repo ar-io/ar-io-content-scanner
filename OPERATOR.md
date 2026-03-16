@@ -160,7 +160,7 @@ Key metrics to watch:
 
 ### Logs
 
-Content Scanner outputs structured JSON logs. Key log events:
+Content Scanner outputs structured text logs by default (`LOG_FORMAT=text`), designed to be readable in `docker logs` while remaining parseable by log aggregation tools. Set `LOG_FORMAT=json` for JSON output (e.g., for ELK, Datadog, or Loki).
 
 ```bash
 # See all scan results
@@ -174,6 +174,12 @@ docker compose logs content-scanner | grep -i suspicious
 ```
 
 Example log entry for a blocked phishing page:
+
+```
+2024-01-15T10:30:45 WARN  core | scan_complete | tx_id=abc123... verdict=malicious rules=["seed-phrase-harvesting","wallet-impersonation"] ml_score=0.97 scan_ms=42 action=blocked
+```
+
+With `LOG_FORMAT=json`, the same event outputs as:
 
 ```json
 {
@@ -219,6 +225,7 @@ Content Scanner does not include a built-in notification system. To get alerted 
 | `ML_MODEL_ENABLED` | `true` | Enable XGBoost ML scoring |
 | `ML_SUSPICIOUS_THRESHOLD` | `0.95` | ML score threshold for SUSPICIOUS escalation (0-1) |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warning`, `error` |
+| `LOG_FORMAT` | `text` | `text` (human-readable) or `json` (for log aggregation) |
 | `MAX_SCAN_BYTES` | `262144` | Max HTML bytes to scan (256KB) |
 | `SCAN_TIMEOUT` | `10000` | Gateway fetch timeout in ms |
 | `DB_PATH` | `/app/data/scanner.db` | SQLite database path |

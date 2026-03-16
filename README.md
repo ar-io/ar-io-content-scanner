@@ -116,6 +116,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `ML_MODEL_ENABLED` | No | `true` | Enable XGBoost ML scoring |
 | `ML_SUSPICIOUS_THRESHOLD` | No | `0.95` | ML score threshold for SUSPICIOUS escalation (0-1) |
 | `LOG_LEVEL` | No | `info` | Logging level (debug, info, warning, error) |
+| `LOG_FORMAT` | No | `text` | Log output format: `text` (human-readable) or `json` (for log aggregation) |
 | `MAX_SCAN_BYTES` | No | `262144` | Max HTML bytes to scan (256KB) |
 | `SCAN_TIMEOUT` | No | `10000` | Gateway fetch timeout in milliseconds |
 | `DB_PATH` | No | `/app/data/scanner.db` | SQLite database path |

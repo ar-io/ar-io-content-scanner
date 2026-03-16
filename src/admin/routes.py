@@ -622,6 +622,7 @@ def build_admin_router(app_state) -> APIRouter:
             "port": settings.scanner_port,
             "workers": settings.scanner_workers,
             "log_level": settings.log_level,
+            "log_format": settings.log_format,
             "db_path": settings.db_path,
             "ml_model_enabled": settings.ml_model_enabled,
             "max_scan_bytes": settings.max_scan_bytes,
