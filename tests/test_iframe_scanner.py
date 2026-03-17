@@ -68,6 +68,16 @@ class TestExtractIframeContent:
         results = extract_iframe_content(soup)
         assert len(results) == 2
 
+    def test_data_uri_base64_case_insensitive(self):
+        """BASE64 in uppercase should still be decoded."""
+        inner = "<html><body><h1>Test</h1></body></html>"
+        encoded = base64.b64encode(inner.encode()).decode()
+        html = f'<html><body><iframe src="data:text/html;BASE64,{encoded}"></iframe></body></html>'
+        soup = parse_html(html)
+        results = extract_iframe_content(soup)
+        assert len(results) == 1
+        assert "<h1>Test</h1>" in results[0]
+
     def test_data_uri_with_charset(self):
         inner = "<p>test</p>"
         encoded = base64.b64encode(inner.encode()).decode()

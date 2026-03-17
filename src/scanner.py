@@ -66,8 +66,15 @@ def _needs_rendered_scan(html: str, soup: BeautifulSoup, result: ScanResult) -> 
     if not _DOM_MANIPULATION_RE.search(script_text):
         return False
 
-    # Check for sparse static content
-    visible_text = soup.get_text(strip=True)
+    # Check for sparse static content (excluding script/style text)
+    # Build visible text by joining non-script/style element text
+    visible_parts = []
+    for element in soup.find_all(string=True):
+        if element.parent and element.parent.name not in ("script", "style"):
+            text = element.strip()
+            if text:
+                visible_parts.append(text)
+    visible_text = " ".join(visible_parts)
     if len(visible_text) < 200:
         return True
 
@@ -476,8 +483,16 @@ class Scanner:
 
                 iframe_htmls = extract_iframe_content(soup)
                 for iframe_html in iframe_htmls:
-                    iframe_soup = parse_html(iframe_html)
-                    iframe_result = self.engine.evaluate(iframe_html, iframe_soup)
+                    iframe_soup = await asyncio.wait_for(
+                        loop.run_in_executor(None, parse_html, iframe_html),
+                        timeout=timeout_s,
+                    )
+                    iframe_result = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None, self.engine.evaluate, iframe_html, iframe_soup,
+                        ),
+                        timeout=timeout_s,
+                    )
                     if iframe_result.verdict != Verdict.CLEAN:
                         iframe_result.matched_rules = [
                             f"iframe:{r}" for r in iframe_result.matched_rules

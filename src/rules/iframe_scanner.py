@@ -46,9 +46,11 @@ def extract_iframe_content(soup: BeautifulSoup) -> list[str]:
             continue
 
         try:
-            if ";base64," in src.lower():
-                # data:text/html;base64,ENCODED
-                _, encoded = src.split(";base64,", 1)
+            src_lower = src.lower()
+            if ";base64," in src_lower:
+                # data:text/html;base64,ENCODED — find split point case-insensitively
+                idx = src_lower.index(";base64,")
+                encoded = src[idx + len(";base64,"):]
                 html_bytes = base64.b64decode(encoded)
                 results.append(html_bytes.decode("utf-8", errors="replace"))
             elif "," in src:

