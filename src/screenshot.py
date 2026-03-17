@@ -287,6 +287,12 @@ class ScreenshotService:
                     extra={"tx_id": tx_id},
                 )
 
+            # Wait for async DOM modifications (setTimeout, requestAnimationFrame).
+            # networkidle only waits for network quiet, not JS timers.
+            # 1 second covers the vast majority of delayed rendering patterns
+            # without significantly impacting scan throughput.
+            await page.wait_for_timeout(1000)
+
             rendered_html = await page.content()
 
             logger.debug(
