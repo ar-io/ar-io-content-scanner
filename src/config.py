@@ -48,6 +48,9 @@ class Settings:
     rule_wallet_impersonation: bool = True
     rule_obfuscated_loader: bool = True
 
+    # Content scanner toggles
+    scanner_example_image: bool = False
+
     # Content limits
     max_scan_bytes: int = 262144  # 256KB
     scan_timeout_ms: int = 10000
@@ -233,6 +236,10 @@ def load_settings() -> Settings:
         == "true",
         rule_obfuscated_loader=os.environ.get(
             "RULE_OBFUSCATED_LOADER", "true"
+        ).lower()
+        == "true",
+        scanner_example_image=os.environ.get(
+            "SCANNER_EXAMPLE_IMAGE", "false"
         ).lower()
         == "true",
         max_scan_bytes=max_scan_bytes,

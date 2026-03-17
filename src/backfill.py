@@ -77,6 +77,7 @@ class BackfillScanner:
         gateway: GatewayClient,
         metrics: ScanMetrics,
         screenshot: ScreenshotService | None = None,
+        dispatcher=None,
     ):
         self.settings = settings
         self.db = db
@@ -84,6 +85,7 @@ class BackfillScanner:
         self.gateway = gateway
         self.metrics = metrics
         self.screenshot = screenshot
+        self.dispatcher = dispatcher
 
     async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
         try:
@@ -349,34 +351,63 @@ class BackfillScanner:
             return
 
         if not looks_like_html(head):
-            stats["skipped_not_html"] += 1
-            try:
-                self.db.save_verdict(
-                    content_hash=hash_str,
-                    tx_id="backfill",
-                    verdict=Verdict.SKIPPED,
-                    matched_rules="[]",
-                    ml_score=None,
-                    scanner_version=self.settings.scanner_version,
-                )
-            except Exception:
-                pass
-            return
+            # Check if a content scanner can handle this file
+            can_scan = False
+            if self.dispatcher:
+                from src.scanners.sniff import sniff_content_type
 
-        # 3. Read full file
-        content = await loop.run_in_executor(
-            None, self._read_file, filepath
-        )
-        if content is None:
-            stats["errors"] += 1
-            return
+                sniffed_type = sniff_content_type(head)
+                can_scan = self.dispatcher.registry.has_scanners_for_type(sniffed_type)
 
-        # 4. Parse and scan
-        html = content.decode("utf-8", errors="replace")
-        soup = await loop.run_in_executor(None, parse_html, html)
-        result = await loop.run_in_executor(
-            None, self.engine.evaluate, html, soup
-        )
+            if not can_scan:
+                stats["skipped_not_html"] += 1
+                try:
+                    self.db.save_verdict(
+                        content_hash=hash_str,
+                        tx_id="backfill",
+                        verdict=Verdict.SKIPPED,
+                        matched_rules="[]",
+                        ml_score=None,
+                        scanner_version=self.settings.scanner_version,
+                    )
+                except Exception:
+                    pass
+                return
+
+            # 3a. Read full file for content scanner
+            content = await loop.run_in_executor(
+                None, self._read_file, filepath
+            )
+            if content is None:
+                stats["errors"] += 1
+                return
+
+            from src.scanners.base import ContentMetadata
+
+            metadata = ContentMetadata(
+                tx_id="backfill",
+                content_hash=hash_str,
+                data_size=len(content),
+            )
+            result = await self.dispatcher.evaluate_content(
+                content, sniffed_type, metadata,
+            )
+            self.metrics.record_content_scan()
+        else:
+            # 3. Read full file
+            content = await loop.run_in_executor(
+                None, self._read_file, filepath
+            )
+            if content is None:
+                stats["errors"] += 1
+                return
+
+            # 4. Parse and scan
+            html = content.decode("utf-8", errors="replace")
+            soup = await loop.run_in_executor(None, parse_html, html)
+            result = await loop.run_in_executor(
+                None, self.engine.evaluate, html, soup
+            )
 
         # 5. Look up TX IDs for malicious and suspicious hits
         tx_id = "backfill"

@@ -35,14 +35,19 @@ docker build -t content-scanner .
 
 ### Request Flow
 
-Gateway emits `DATA_CACHED` webhook → `POST /scan` (FastAPI) → `Scanner.process_webhook()` filters by content type & checks verdict cache → enqueues to SQLite `scan_queue` → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches HTML from gateway via `GET /raw/:id` → `RuleEngine.evaluate()` runs rules + ML → caches verdict in `scan_verdicts` table → checks Google Safe Browsing if flagged (escalates SUSPICIOUS→MALICIOUS if Google corroborates) → captures screenshot if flagged → blocks via `PUT /ar-io/admin/block-data` if malicious and mode is `enforce`.
+Gateway emits `DATA_CACHED` webhook → `POST /scan` (FastAPI) → `Scanner.process_webhook()` filters by content type & checks verdict cache → enqueues to SQLite `scan_queue` → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` → routes to appropriate scanning tier:
+- **HTML content** → `RuleEngine.evaluate()` runs rules + ML (Tier 1)
+- **Non-HTML content** → `ScanDispatcher` → `ContentScannerRegistry` → matching `ContentScanner(s)` run concurrently (Tier 2)
+- **No scanner matches** → SKIPPED
+
+After scanning → caches verdict in `scan_verdicts` table → checks Google Safe Browsing if flagged (escalates SUSPICIOUS→MALICIOUS if Google corroborates) → captures screenshot if flagged (HTML only) → blocks via `PUT /ar-io/admin/block-data` if malicious and mode is `enforce`.
 
 ### Key Components
 
 - **`server.py`**: FastAPI app with `build_app()` factory. Wires together all components via `lifespan`. Stores shared state on `app.state`.
 - **`config.py`**: Frozen `Settings` dataclass + `load_settings()` factory that reads and validates env vars. All settings flow from this single source.
 - **`models.py`**: Core types — `WebhookPayload`/`WebhookData` (Pydantic), `Verdict` enum (CLEAN/SUSPICIOUS/MALICIOUS/SKIPPED), `RuleResult`, `ScanResult`, `AdminOverride` dataclass.
-- **`scanner.py`**: Two code paths — `process_webhook()` (fast filtering + enqueue) and `process_queue_item()` (fetch, parse, evaluate, act). CPU-bound work (HTML parsing, rule evaluation) runs via `run_in_executor()`. On cache miss, optionally queries verdict feed peers before scanning locally.
+- **`scanner.py`**: Two code paths — `process_webhook()` (fast filtering + enqueue) and `process_queue_item()` (fetch, parse, evaluate, act). Routes content to HTML rule engine or content scanners via `ScanDispatcher`. CPU-bound work (HTML parsing, rule evaluation) runs via `run_in_executor()`. On cache miss, optionally queries verdict feed peers before scanning locally.
 - **`worker.py`**: `WorkerPool` runs N async worker loops that poll `scan_queue` with 0.5s sleep. Includes a cleanup loop that purges items older than 1 hour. Optionally runs backfill, feed poller, and Safe Browsing monitor loops.
 - **`backfill.py`**: `BackfillScanner` walks the gateway's contiguous data filesystem, content-sniffs for HTML, scans through the rule engine + ML, caches verdicts, and blocks malicious content in enforce mode. Uses `GatewayDBReader` for read-only hash→TX ID lookups via the gateway's `data.db`.
 - **`db.py`**: Five SQLite tables — `scan_verdicts` (content hash → verdict, with `source` column for local vs peer origin and `safe_browsing_flagged` column), `scan_queue` (pending/processing/failed items), `admin_overrides` (operator confirm/dismiss decisions), `feed_sync_state` (cursor-based sync tracking per peer), `scanner_state` (key-value persistence for dashboard stats across restarts). WAL mode for concurrent reads. `has_verdict()` for efficient backfill cache checks.
@@ -52,6 +57,7 @@ Gateway emits `DATA_CACHED` webhook → `POST /scan` (FastAPI) → `Scanner.proc
 - **`safe_browsing.py`**: `SafeBrowsingClient` with two backends: Lookup API v4 (`check_url()`/`check_urls()`, requires `SAFE_BROWSING_API_KEY`) for per-URL checks, and Google Transparency Report (`check_domain()`, no key needed) for site-level domain monitoring. Returns `SafeBrowsingResult` or `DomainStatus`. Fail-open design: API errors never affect scanning. Used on-verdict (in `scanner.py`) and periodically (in `worker.py`'s monitor loop). Domain monitoring requires `GATEWAY_PUBLIC_URL` to be set.
 - **`screenshot.py`**: `ScreenshotService` uses Playwright (headless Chromium) to capture screenshots of flagged content. Network-isolated: only gateway-origin requests are allowed. Screenshots stored as `{SCREENSHOT_DIR}/{content_hash}.jpg`, deleted when admin confirms/dismisses.
 - **`feed/`**: Peer-to-peer verdict sharing. `client.py` (`FeedClient`) is an async httpx client for fetching verdicts from peers. `poller.py` (`FeedPoller`) periodically syncs new verdicts from configured peer URLs using cursor-based pagination. `routes.py` exposes `GET /api/verdicts` (paginated feed) and `GET /api/verdicts/{hash}` (single lookup) for peers to consume. `auth.py` provides Bearer token auth via `VERDICT_API_KEY`. Only exports `source='local'` verdicts to prevent echo loops.
+- **`scanners/`**: Pluggable content scanner framework (Tier 2). `base.py` defines the `ContentScanner` ABC, `ContentMetadata`, and `ContentScannerResult`. `registry.py` (`ContentScannerRegistry`) matches scanners to MIME types via fnmatch patterns. `dispatcher.py` (`ScanDispatcher`) sits above both tiers, routing HTML to `RuleEngine` and non-HTML to matching content scanners (concurrent via `asyncio.gather`, fail-open). `sniff.py` detects MIME types from magic bytes for backfill. `example_image_scanner.py` is a disabled-by-default stub for `image/*`.
 - **`admin/routes.py`**: Admin API router built via `build_admin_router(app_state)`. Uses `_state.db` accessor pattern (reads from `app_state` at request time, not build time) so tests can replace DB after `build_app()`.
 - **`admin/auth.py`**: FastAPI Bearer token dependency factory for `SCANNER_ADMIN_KEY` authentication.
 
@@ -111,6 +117,8 @@ Required: `GATEWAY_URL`, `ADMIN_API_KEY`, `SCANNER_ADMIN_KEY`
 Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `LOG_FORMAT` (text|json, default: text — "text" for human-readable Docker logs, "json" for log aggregation), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
 
 Rule toggles (all default true): `RULE_SEED_PHRASE`, `RULE_EXTERNAL_CREDENTIAL_FORM`, `RULE_WALLET_IMPERSONATION`, `RULE_OBFUSCATED_LOADER`
+
+Content scanners: `SCANNER_EXAMPLE_IMAGE` (false — stub image scanner for development/testing)
 
 Screenshots: `SCREENSHOT_ENABLED` (true), `SCREENSHOT_DIR` (/app/data/screenshots), `SCREENSHOT_TIMEOUT_MS` (15000)
 

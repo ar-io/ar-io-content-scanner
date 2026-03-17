@@ -278,6 +278,10 @@ NOT_HTML_CONTENT = b'{"name": "some json file", "value": 42}'
 
 MINIMAL_HTML = """<html><body><p>Hello world</p></body></html>"""
 
+# Binary content headers for content scanner tests
+BINARY_PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+BINARY_JPEG_HEADER = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+
 MICROSOFT_PHISHING = """<!DOCTYPE html>
 <html>
 <head><title>Sign-In</title></head>

@@ -658,6 +658,11 @@ def build_admin_router(app_state) -> APIRouter:
                 "api_key_set": bool(settings.safe_browsing_api_key),
                 "check_interval": settings.safe_browsing_check_interval,
             },
+            "content_scanners": (
+                _state.registry.scanner_names
+                if hasattr(_state, "registry") and _state.registry
+                else []
+            ),
             "db_stats": db.get_db_stats(),
         }
 

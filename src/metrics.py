@@ -37,6 +37,9 @@ class ScanMetrics:
         self.safe_browsing_domain_flagged = False
         self.safe_browsing_domain_threats: list[str] = []
         self.safe_browsing_domain_checks = 0
+        # Content scanner metrics
+        self.content_scans_total = 0
+        self.content_scans_by_scanner: dict[str, int] = {}
         # Backfill metrics
         self.backfill_files_scanned = 0
         self.backfill_malicious_found = 0
@@ -114,6 +117,14 @@ class ScanMetrics:
             self.safe_browsing_domain_threats = threat_types or []
             self.safe_browsing_domain_checks += 1
 
+    def record_content_scan(self, scanner_name: str | None = None) -> None:
+        with self._lock:
+            self.content_scans_total += 1
+            if scanner_name:
+                self.content_scans_by_scanner[scanner_name] = (
+                    self.content_scans_by_scanner.get(scanner_name, 0) + 1
+                )
+
     def record_backfill_sweep(self, stats: dict) -> None:
         with self._lock:
             self.backfill_files_scanned += stats.get("scanned", 0)
@@ -157,6 +168,8 @@ class ScanMetrics:
                 "safe_browsing_domain_flagged": self.safe_browsing_domain_flagged,
                 "safe_browsing_domain_threats": list(self.safe_browsing_domain_threats),
                 "safe_browsing_domain_checks": self.safe_browsing_domain_checks,
+                "content_scans_total": self.content_scans_total,
+                "content_scans_by_scanner": dict(self.content_scans_by_scanner),
             }
 
     # --- Persistence: survive container restarts ---
@@ -187,6 +200,7 @@ class ScanMetrics:
                 "m_v_clean": str(self.scans_by_verdict.get("clean", 0)),
                 "m_v_suspicious": str(self.scans_by_verdict.get("suspicious", 0)),
                 "m_v_malicious": str(self.scans_by_verdict.get("malicious", 0)),
+                "m_content_scans": str(self.content_scans_total),
             })
 
     def load_from_db(self, db) -> None:
@@ -214,6 +228,7 @@ class ScanMetrics:
             self.scans_by_verdict["clean"] = int(db.get_state("m_v_clean", "0"))
             self.scans_by_verdict["suspicious"] = int(db.get_state("m_v_suspicious", "0"))
             self.scans_by_verdict["malicious"] = int(db.get_state("m_v_malicious", "0"))
+            self.content_scans_total = int(db.get_state("m_content_scans", "0"))
 
     def to_prometheus(self, queue_depth: int = 0) -> str:
         with self._lock:
@@ -368,5 +383,17 @@ class ScanMetrics:
                 f"scanner_safe_browsing_domain_flagged "
                 f"{1 if self.safe_browsing_domain_flagged else 0}"
             )
+            lines.append(
+                "# HELP scanner_content_scans_total "
+                "Total content scanner evaluations"
+            )
+            lines.append("# TYPE scanner_content_scans_total counter")
+            lines.append(
+                f"scanner_content_scans_total {self.content_scans_total}"
+            )
+            for name, count in self.content_scans_by_scanner.items():
+                lines.append(
+                    f'scanner_content_scans_by_scanner{{scanner="{name}"}} {count}'
+                )
             lines.append("")
             return "\n".join(lines)

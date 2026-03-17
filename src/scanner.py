@@ -28,6 +28,12 @@ try:
 except ImportError:
     SafeBrowsingClient = None  # type: ignore[assignment,misc]
 
+# Optional dispatcher import
+try:
+    from src.scanners.dispatcher import ScanDispatcher
+except ImportError:
+    ScanDispatcher = None  # type: ignore[assignment,misc]
+
 logger = logging.getLogger("scanner.core")
 
 HTML_SIGNATURES = [
@@ -82,6 +88,7 @@ class Scanner:
         screenshot: ScreenshotService | None = None,
         feed_client: FeedClient | None = None,
         safe_browsing: SafeBrowsingClient | None = None,
+        dispatcher: ScanDispatcher | None = None,
     ):
         self.settings = settings
         self.db = db
@@ -91,6 +98,7 @@ class Scanner:
         self.screenshot = screenshot
         self.feed_client = feed_client
         self.safe_browsing = safe_browsing
+        self.dispatcher = dispatcher
 
     async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
         try:
@@ -190,32 +198,45 @@ class Scanner:
         if payload.event != "data-cached":
             return
 
-        # Fast path: skip non-HTML content types
+        # Fast path: skip non-HTML content types (unless a content scanner wants them)
         html_check = is_html_content_type(data.contentType)
         if html_check is False:
-            logger.debug(
-                "scan_skipped",
-                extra={
-                    "tx_id": data.id,
-                    "reason": "not_html",
-                    "content_type": data.contentType,
-                },
+            # Check if a content scanner handles this type
+            has_scanner = (
+                self.dispatcher
+                and data.contentType
+                and self.dispatcher.registry.has_scanners_for_type(data.contentType)
             )
-            self.metrics.record_skip()
-            return
+            if not has_scanner:
+                logger.debug(
+                    "scan_skipped",
+                    extra={
+                        "tx_id": data.id,
+                        "reason": "not_html",
+                        "content_type": data.contentType,
+                    },
+                )
+                self.metrics.record_skip()
+                return
 
         # Skip large files with unknown content type (unlikely HTML)
         if html_check is None and data.dataSize and data.dataSize > 524288:
-            logger.debug(
-                "scan_skipped",
-                extra={
-                    "tx_id": data.id,
-                    "reason": "unknown_type_too_large",
-                    "data_size": data.dataSize,
-                },
+            # Unless a content scanner might want it
+            has_scanner = (
+                self.dispatcher
+                and self.dispatcher.registry.accepts_any_non_html()
             )
-            self.metrics.record_skip()
-            return
+            if not has_scanner:
+                logger.debug(
+                    "scan_skipped",
+                    extra={
+                        "tx_id": data.id,
+                        "reason": "unknown_type_too_large",
+                        "data_size": data.dataSize,
+                    },
+                )
+                self.metrics.record_skip()
+                return
 
         # Check verdict cache by hash
         if data.hash:
@@ -373,43 +394,76 @@ class Scanner:
         if content is None:
             raise RuntimeError(f"Failed to fetch content for {tx_id}")
 
-        # Content sniff if content type was unknown
-        if item.content_type is None or is_html_content_type(item.content_type) is None:
-            if not looks_like_html(content):
-                logger.debug(
-                    "scan_skipped",
-                    extra={
-                        "tx_id": tx_id,
-                        "reason": "content_sniff_not_html",
-                    },
+        # Determine if content is HTML or a type a content scanner handles
+        effective_content_type = item.content_type
+        ct_check = is_html_content_type(item.content_type)
+
+        if ct_check is True:
+            is_html = True
+        elif ct_check is False:
+            is_html = False
+        else:
+            # Unknown content type — sniff the bytes
+            is_html = looks_like_html(content)
+            if not is_html and self.dispatcher:
+                from src.scanners.sniff import sniff_content_type
+
+                effective_content_type = sniff_content_type(content[:512])
+
+        # Route to appropriate scanning tier
+        if is_html:
+            self.metrics.record_cache_miss()
+
+            # Parse and scan — run CPU-bound work off the event loop
+            html = content.decode("utf-8", errors="replace")
+            loop = asyncio.get_running_loop()
+            timeout_s = self.settings.scan_timeout_ms / 1000
+            soup: BeautifulSoup = await asyncio.wait_for(
+                loop.run_in_executor(None, parse_html, html),
+                timeout=timeout_s,
+            )
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, self.engine.evaluate, html, soup),
+                timeout=timeout_s,
+            )
+        elif (
+            self.dispatcher
+            and effective_content_type
+            and self.dispatcher.registry.has_scanners_for_type(effective_content_type)
+        ):
+            self.metrics.record_cache_miss()
+            self.metrics.record_content_scan()
+
+            from src.scanners.base import ContentMetadata
+
+            metadata = ContentMetadata(
+                tx_id=tx_id,
+                content_hash=content_hash,
+                data_size=len(content),
+            )
+            result = await self.dispatcher.evaluate_content(
+                content, effective_content_type, metadata,
+            )
+        else:
+            # Not HTML and no content scanner — skip
+            logger.debug(
+                "scan_skipped",
+                extra={
+                    "tx_id": tx_id,
+                    "reason": "content_sniff_not_html",
+                },
+            )
+            self.metrics.record_skip()
+            if content_hash:
+                self.db.save_verdict(
+                    content_hash=content_hash,
+                    tx_id=tx_id,
+                    verdict=Verdict.SKIPPED,
+                    matched_rules="[]",
+                    ml_score=None,
+                    scanner_version=self.settings.scanner_version,
                 )
-                self.metrics.record_skip()
-                # Cache as skipped so we don't fetch again
-                if content_hash:
-                    self.db.save_verdict(
-                        content_hash=content_hash,
-                        tx_id=tx_id,
-                        verdict=Verdict.SKIPPED,
-                        matched_rules="[]",
-                        ml_score=None,
-                        scanner_version=self.settings.scanner_version,
-                    )
-                return
-
-        self.metrics.record_cache_miss()
-
-        # Parse and scan — run CPU-bound work off the event loop
-        html = content.decode("utf-8", errors="replace")
-        loop = asyncio.get_running_loop()
-        timeout_s = self.settings.scan_timeout_ms / 1000
-        soup: BeautifulSoup = await asyncio.wait_for(
-            loop.run_in_executor(None, parse_html, html),
-            timeout=timeout_s,
-        )
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, self.engine.evaluate, html, soup),
-            timeout=timeout_s,
-        )
+            return
 
         # Cache verdict
         if content_hash:
@@ -446,10 +500,12 @@ class Scanner:
         # Capture screenshot BEFORE blocking — in enforce mode the gateway
         # will return "Not Found" after blocking, so the screenshot must be
         # taken while the content is still accessible.
+        # Only for HTML content — screenshots use Playwright which renders HTML.
         if (
             result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
             and content_hash
             and self.screenshot
+            and is_html
         ):
             await self._capture_screenshot(tx_id, content_hash)
 

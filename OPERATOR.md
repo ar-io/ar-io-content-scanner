@@ -271,6 +271,16 @@ Content Scanner does not include a built-in notification system. To get alerted 
 | `BACKFILL_RATE` | `5` | Max files scanned per second during backfill |
 | `BACKFILL_INTERVAL_HOURS` | `24` | Hours between re-sweeps (0 = one-shot) |
 
+### Content Scanners
+
+Content scanners extend the scanner to handle non-HTML content types (images, PDFs, video, etc.). They are disabled by default and can be enabled individually.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCANNER_EXAMPLE_IMAGE` | `false` | Enable the example image scanner (stub, always returns CLEAN — for development/testing only) |
+
+When a content scanner is enabled, non-HTML content matching its MIME type patterns will be routed to that scanner instead of being skipped. Content scanners run asynchronously and are fail-open — errors never affect other scanning.
+
 ### Rule Toggles
 
 All rules are enabled by default. Disable individual rules if needed:

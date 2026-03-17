@@ -19,6 +19,8 @@ from src.models import WebhookPayload
 from src.rules.engine import RuleEngine
 from src.safe_browsing import SafeBrowsingClient
 from src.scanner import Scanner
+from src.scanners.dispatcher import ScanDispatcher
+from src.scanners.registry import ContentScannerRegistry
 from src.screenshot import ScreenshotService
 from src.worker import WorkerPool
 
@@ -48,6 +50,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             logger.exception("Failed to load ML model, continuing without it")
 
     engine = RuleEngine(settings, classifier)
+
+    # Content scanner registry (Tier 2: pluggable binary scanners)
+    registry = ContentScannerRegistry()
+    if settings.scanner_example_image:
+        from src.scanners.example_image_scanner import ExampleImageScanner
+
+        registry.register(ExampleImageScanner())
+
+    dispatcher = ScanDispatcher(engine, registry)
 
     screenshot = None
     if settings.screenshot_enabled:
@@ -85,11 +96,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         settings, db, gateway, engine, metrics,
         screenshot=screenshot, feed_client=feed_client,
         safe_browsing=safe_browsing,
+        dispatcher=dispatcher,
     )
 
     backfill = None
     if settings.backfill_enabled:
-        backfill = BackfillScanner(settings, db, engine, gateway, metrics, screenshot=screenshot)
+        backfill = BackfillScanner(settings, db, engine, gateway, metrics, screenshot=screenshot, dispatcher=dispatcher)
         if (
             settings.scanner_mode == "enforce"
             and not settings.backfill_gateway_db_path
@@ -131,6 +143,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "verdict_feed_peers": len(settings.verdict_feed_urls),
                 "safe_browsing": True,
                 "safe_browsing_api_key": bool(settings.safe_browsing_api_key),
+                "content_scanners": registry.scanner_names,
             },
         )
         yield
@@ -159,6 +172,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.state.screenshot = screenshot
     app.state.feed_poller = feed_poller
     app.state.safe_browsing = safe_browsing
+    app.state.registry = registry
 
     # Mount verdict feed API if configured
     if settings.verdict_api_key:

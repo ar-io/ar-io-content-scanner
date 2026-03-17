@@ -154,6 +154,22 @@
         </template>
       </div>
 
+      <!-- Content Scanners -->
+      <template x-if="config.content_scanners && config.content_scanners.length > 0">
+        <div class="card">
+          <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Content Scanners</h3>
+          <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0 0 16px;">Pluggable scanners for non-HTML content types (images, PDFs, etc.).</p>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
+            <template x-for="name in config.content_scanners">
+              <div style="display: flex; align-items: center;">
+                <span class="status-dot enabled"></span>
+                <span style="font-weight: 600;" x-text="name"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
       <!-- Safe Browsing -->
       <div class="card">
         <h3 class="font-display" style="font-size: 1rem; margin: 0 0 4px;">Google Safe Browsing</h3>

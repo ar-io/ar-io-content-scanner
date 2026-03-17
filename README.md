@@ -99,6 +99,18 @@ Post-scan (if SAFE_BROWSING_API_KEY set, optional):
 SUSPICIOUS + Google Safe Browsing flags URL → escalated to MALICIOUS
 ```
 
+### Content Scanners (Tier 2)
+
+The scanner supports a pluggable architecture for non-HTML content types. Content scanners implement the `ContentScanner` ABC and are registered by MIME type pattern (e.g., `image/*`, `application/pdf`). When content arrives that matches a registered scanner, it is routed to that scanner instead of the HTML rule engine.
+
+Content scanners:
+- Run asynchronously and can call external APIs
+- Are fail-open: scanner errors never block legitimate content
+- Multiple scanners matching the same type run concurrently; highest severity verdict wins
+- When no content scanners are registered, behavior is identical to before (non-HTML content is skipped)
+
+See `CONTRIBUTING.md` for instructions on adding new content scanners, and `src/scanners/example_image_scanner.py` for a reference implementation.
+
 ### Why This Won't Flag Legitimate DApps
 
 Arweave content is static -- there is no server-side backend. A password form posting to an external URL has no legitimate use case. Real Arweave dApps authenticate via wallet signatures (`window.ethereum.request()`), not HTML password forms. The conjunctive rules exploit this Arweave-specific context.
@@ -142,6 +154,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `VERDICT_FEED_REQUEST_TIMEOUT_MS` | No | `5000` | Timeout for peer API requests |
 | `SAFE_BROWSING_API_KEY` | No | -- | Google Safe Browsing API key (optional, enables URL-level checks via Lookup API) |
 | `SAFE_BROWSING_CHECK_INTERVAL` | No | `3600` | Seconds between periodic domain + URL monitoring (min 60) |
+| `SCANNER_EXAMPLE_IMAGE` | No | `false` | Enable example image scanner (stub, for development/testing) |
 
 ## Admin Dashboard
 
