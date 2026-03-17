@@ -1,35 +1,62 @@
 # ar.io Content Scanner
 
-A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). Detects and auto-blocks phishing HTML content hosted on Arweave, keeping gateways clean and off blocklists like Netcraft and Google Safe Browsing.
+A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). Detects and auto-blocks phishing content hosted on Arweave, keeping gateways clean and off blocklists like Netcraft and Google Safe Browsing.
 
 ## How It Works
 
 ```
-                    ar-io-node                     Content Scanner
-                    ----------                     ---------------
-
-  User request ──> Cache miss ──> Fetch from Arweave
-                        |
-                   Cache write
-                        |
-                   DATA_CACHED ──────────────────> POST /scan
-                        |                               |
-                   Serve content                   Enqueue scan
-                   (no delay)                           |
-                                                   Worker picks up
-                                                        |
-                                               GET /raw/:id ──> Fetch HTML
-                                                        |
-                                                   Parse HTML
-                                                   Run 4 rules + ML
-                                                        |
-                                                ┌── malicious? ──┐
-                                                |                |
-                                               yes               no
-                                                |                |
-                                          PUT block-data    Cache clean
-                                                |
-                                          Future requests ──> 404
+    ┌──────────────────────────────────────────────────────────────────┐
+    │                          ar-io-node                              │
+    │                                                                  │
+    │  User request ──> Cache miss ──> Fetch from Arweave              │
+    │                        │                                         │
+    │                   Cache write ──> Serve content (no delay)       │
+    │                        │                                         │
+    │                   DATA_CACHED webhook                            │
+    └────────────────────────┼─────────────────────────────────────────┘
+                             │
+                             ▼
+    ┌──────────────────────────────────────────────────────────────────┐
+    │                      Content Scanner                             │
+    │                                                                  │
+    │  POST /scan ──> Check cache ──> Enqueue ──> Worker picks up      │
+    │                                                  │               │
+    │                                          Fetch content           │
+    │                                          GET /raw/:id            │
+    │                                                  │               │
+    │                                          ┌───────┴────────┐      │
+    │                                          │  Route by type  │      │
+    │                                          └───┬────────┬───┘      │
+    │                                              │        │          │
+    │                                   ┌──────────┘        └───────┐  │
+    │                                   ▼                           ▼  │
+    │                              HTML content              Non-HTML  │
+    │                                   │                   (Tier 2)   │
+    │                                   ▼                       │      │
+    │                          ┌─────────────────┐    Content scanners  │
+    │                          │  Static rules   │    (pluggable, async │
+    │                          │  4 rules + ML   │     fail-open)      │
+    │                          └────────┬────────┘              │      │
+    │                                   │                       │      │
+    │                          ┌────────┴────────┐              │      │
+    │                          │ Defense layers   │              │      │
+    │                          │ Iframe scanning  │              │      │
+    │                          │ Rendered DOM     │              │      │
+    │                          └────────┬────────┘              │      │
+    │                                   │                       │      │
+    │                                   └───────────┬───────────┘      │
+    │                                               ▼                  │
+    │                                    ┌─────────────────────┐       │
+    │                                    │   Verdict decision   │       │
+    │                                    └──────┬──────┬───────┘       │
+    │                                           │      │               │
+    │                                      malicious   clean           │
+    │                                           │      │               │
+    │                                    Block content  Cache verdict   │
+    │                                    PUT block-data                 │
+    │                                           │                      │
+    │                                    Future requests ──> 404       │
+    └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Tradeoff:** The first user to access malicious content sees it. All subsequent requests are blocked. This is acceptable because phishing pages need repeat victims, and blocking after first access eliminates the attack surface.
@@ -81,7 +108,7 @@ Each rule requires 2+ independent signals (conjunctive logic) to ensure near-zer
 |------|----------|----------|
 | **Seed Phrase Harvesting** | 8+ text inputs | Seed phrase terminology in visible text |
 | **External Credential Form** | Password input | Form action is absolute URL, or JS exfil patterns with external URL |
-| **Wallet Impersonation** | Crypto brand in title/headings/img alt | Password input or key-phrase terminology |
+| **Wallet Impersonation** | Crypto brand in title/headings/img alt/body text | Password input or key-phrase terminology |
 | **Obfuscated Loader** | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
 
 ### ML Model (Advisory)
@@ -94,6 +121,10 @@ Rule verdict     ML score       Final verdict
 MALICIOUS        any            MALICIOUS (auto-block in enforce mode)
 CLEAN            >= 0.95        SUSPICIOUS (log only)
 CLEAN            < 0.95         CLEAN
+
+Defense-in-depth (automatic, runs after static rules return CLEAN):
+Iframe scanning    — extracts + scans data: URI and srcdoc iframes
+Rendered DOM scan  — re-renders JS-heavy pages in Playwright, re-runs rules
 
 Post-scan (if SAFE_BROWSING_API_KEY set, optional):
 SUSPICIOUS + Google Safe Browsing flags URL → escalated to MALICIOUS
@@ -154,6 +185,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `VERDICT_FEED_REQUEST_TIMEOUT_MS` | No | `5000` | Timeout for peer API requests |
 | `SAFE_BROWSING_API_KEY` | No | -- | Google Safe Browsing API key (optional, enables URL-level checks via Lookup API) |
 | `SAFE_BROWSING_CHECK_INTERVAL` | No | `3600` | Seconds between periodic domain + URL monitoring (min 60) |
+| `RENDERED_DOM_SCAN_ENABLED` | No | `true` | Two-pass rendered DOM scan for JS-rendered phishing (uses Playwright) |
 | `SCANNER_EXAMPLE_IMAGE` | No | `false` | Enable example image scanner (stub, for development/testing) |
 
 ## Admin Dashboard

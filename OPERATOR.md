@@ -271,6 +271,18 @@ Content Scanner does not include a built-in notification system. To get alerted 
 | `BACKFILL_RATE` | `5` | Max files scanned per second during backfill |
 | `BACKFILL_INTERVAL_HOURS` | `24` | Hours between re-sweeps (0 = one-shot) |
 
+### Defense-in-Depth (HTML)
+
+These layers run automatically after the static rule engine returns CLEAN, providing additional detection for evasion techniques.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RENDERED_DOM_SCAN_ENABLED` | `true` | Two-pass scan: re-renders JS-heavy pages in Playwright and re-runs rules on the rendered DOM. Catches phishing hidden behind JavaScript. Requires `SCREENSHOT_ENABLED=true`. |
+
+**Iframe scanning** is always active (no toggle) and extracts HTML from `data:` URI and `srcdoc` iframes for separate rule evaluation. This catches phishing forms embedded inside iframes that the static parser can't see.
+
+**Rendered DOM scanning** triggers selectively — only when static rules return CLEAN, the page has scripts with DOM manipulation patterns, and the visible static content is sparse. This adds ~2 seconds per triggered page, not per scan.
+
 ### Content Scanners
 
 Content scanners extend the scanner to handle non-HTML content types (images, PDFs, video, etc.). They are disabled by default and can be enabled individually.
