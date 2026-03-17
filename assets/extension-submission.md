@@ -15,11 +15,16 @@
   "tags": ["community", "stable"],
   "version": "0.1.0",
   "imageUri": "ghcr.io/ar-io/ar-io-content-scanner:main",
-  "lastUpdated": "2026-03-08",
+  "lastUpdated": "2026-03-16",
   "minGatewayVersion": "2.0.0",
   "documentation": "https://github.com/ar-io/ar-io-content-scanner/blob/main/README.md",
   "logo": "https://raw.githubusercontent.com/ar-io/ar-io-content-scanner/main/assets/logo.svg",
-  "screenshots": []
+  "screenshots": [
+    {
+      "url": "https://arweave.net/dqpdSV07YUR-3K4tScOzGULqnvbx6OHaca00X6x_ZKY",
+      "caption": "Admin dashboard showing scan stats, detection verdicts, backfill status, and Google Safe Browsing monitoring"
+    }
+  ]
 }
 ```
 
@@ -40,7 +45,7 @@
 - **minGatewayVersion**: Requires gateway with `DATA_CACHED` webhook support
 - **documentation**: Links to README
 - **logo**: SVG logo hosted in the repo's `assets/` directory
-- **screenshots**: To be added — capture from running admin dashboard at `/admin`
+- **screenshots**: Dashboard screenshot hosted on Arweave (`dqpdSV07YUR-3K4tScOzGULqnvbx6OHaca00X6x_ZKY`)
 
 ## Installation & Testing
 

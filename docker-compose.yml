@@ -11,6 +11,7 @@ services:
       SCANNER_MODE: "${SCANNER_MODE:-dry-run}"
       SCANNER_WORKERS: "${SCANNER_WORKERS:-2}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"
+      LOG_FORMAT: "${LOG_FORMAT:-text}"
       GATEWAY_PUBLIC_URL: "${GATEWAY_PUBLIC_URL:-}"
       ML_MODEL_ENABLED: "true"
       VERDICT_API_KEY: "${VERDICT_API_KEY:-}"
