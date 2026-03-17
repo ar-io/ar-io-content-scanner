@@ -4,11 +4,11 @@
 
 ```json
 {
-  "id": "content-scanner",
-  "name": "Content Scanner",
+  "id": "ar-io-content-scanner",
+  "name": "Ar.io Content Scanner",
   "description": "Auto-detects and blocks phishing HTML on your gateway using rule-based + ML analysis",
   "longDescription": "Content Scanner is a content moderation sidecar that receives DATA_CACHED webhook events, scans HTML for phishing patterns using 4 conjunctive detection rules and an XGBoost ML model, and auto-blocks malicious content via the gateway admin API. It includes a full admin dashboard for reviewing detections, managing overrides, and exporting training data. Designed for precision over recall — every rule requires 2+ independent signals to avoid false positives.",
-  "author": "ar.io",
+  "author": "Ar.io Labs",
   "authorUrl": "https://ar.io",
   "url": "https://github.com/ar-io/ar-io-content-scanner",
   "category": "moderation",
@@ -16,7 +16,7 @@
   "version": "0.1.0",
   "imageUri": "ghcr.io/ar-io/ar-io-content-scanner:main",
   "lastUpdated": "2026-03-16",
-  "minGatewayVersion": "2.0.0",
+  "minGatewayVersion": "r72",
   "documentation": "https://github.com/ar-io/ar-io-content-scanner/blob/main/README.md",
   "logo": "https://raw.githubusercontent.com/ar-io/ar-io-content-scanner/main/assets/logo.svg",
   "screenshots": [
@@ -30,11 +30,11 @@
 
 ### Field Guide:
 
-- **id**: `content-scanner` — unique lowercase identifier
-- **name**: `Content Scanner` — display name
+- **id**: `ar-io-content-scanner` — unique lowercase identifier
+- **name**: `Ar.io Content Scanner` — display name
 - **description**: Short description (93 chars) shown in the extension list
 - **longDescription**: Detailed description covering webhook-driven scanning, 4 detection rules, ML model, admin dashboard, and precision-first design
-- **author**: `ar.io`
+- **author**: `Ar.io Labs`
 - **authorUrl**: `https://ar.io`
 - **url**: GitHub repository URL
 - **category**: `moderation` — content moderation is the primary function
@@ -42,7 +42,7 @@
 - **version**: `0.1.0` — current version from `config.py`
 - **imageUri**: GHCR image published by CI on push to main
 - **lastUpdated**: Today's date
-- **minGatewayVersion**: Requires gateway with `DATA_CACHED` webhook support
+- **minGatewayVersion**: `r72` — requires gateway with `DATA_CACHED` webhook support
 - **documentation**: Links to README
 - **logo**: SVG logo hosted in the repo's `assets/` directory
 - **screenshots**: Dashboard screenshot hosted on Arweave (`dqpdSV07YUR-3K4tScOzGULqnvbx6OHaca00X6x_ZKY`)
