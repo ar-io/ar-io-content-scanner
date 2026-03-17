@@ -89,6 +89,11 @@ GATEWAY_PUBLIC_URL required to enable domain monitoring
 | `wallet-impersonation` | Crypto brand in title/headings/img alt | Password input or key-phrase terminology |
 | `obfuscated-loader` | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
 
+### Defense-in-Depth Layers
+
+- **Iframe scanning**: Extracts and scans HTML from `data:` URI and `srcdoc` iframes (static analysis, no Playwright needed). Matched rules prefixed with `iframe:`.
+- **Rendered DOM scanning**: Two-pass scan for JS-rendered phishing. When static rules return CLEAN but the page has scripts with DOM manipulation and sparse content, renders in Playwright and re-runs rules on the rendered DOM. Matched rules prefixed with `rendered:`. Toggle: `RENDERED_DOM_SCAN_ENABLED` (default true).
+
 ### Admin Frontend
 
 The admin dashboard (`src/templates/admin/`, `src/static/admin/`) uses Alpine.js 3.x with global stores (`$store.auth`, `$store.health`, `$store.toast`). Each tab (dashboard, history, review, settings) has its own JS file defining an Alpine component. The frontend authenticates via `SCANNER_ADMIN_KEY` passed as a Bearer token. Key patterns:
@@ -117,6 +122,8 @@ Required: `GATEWAY_URL`, `ADMIN_API_KEY`, `SCANNER_ADMIN_KEY`
 Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `LOG_FORMAT` (text|json, default: text — "text" for human-readable Docker logs, "json" for log aggregation), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
 
 Rule toggles (all default true): `RULE_SEED_PHRASE`, `RULE_EXTERNAL_CREDENTIAL_FORM`, `RULE_WALLET_IMPERSONATION`, `RULE_OBFUSCATED_LOADER`
+
+Rendered DOM: `RENDERED_DOM_SCAN_ENABLED` (true — two-pass scan with Playwright for JS-rendered phishing)
 
 Content scanners: `SCANNER_EXAMPLE_IMAGE` (false — stub image scanner for development/testing)
 

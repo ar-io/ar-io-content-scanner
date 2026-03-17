@@ -231,3 +231,80 @@ class ScreenshotService:
                     await context.close()
                 except Exception:
                     pass
+
+    async def render_dom(self, tx_id: str, timeout_ms: int | None = None) -> str | None:
+        """Render a page and return the post-JS-execution DOM as HTML.
+
+        Uses the same network-isolated browser context as screenshot capture.
+        Returns the rendered HTML string, or None on error.
+        """
+        if self._browser is None:
+            return None
+        if not self._browser.is_connected():
+            if not await self._restart_browser():
+                return None
+
+        url = f"{self.gateway_url}/{tx_id}"
+        allowed_origin = self._allowed_origin
+        effective_timeout = timeout_ms or self.timeout_ms
+        context = None
+
+        try:
+            context = await self._browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                java_script_enabled=True,
+            )
+            page = await context.new_page()
+
+            async def route_handler(route):
+                parsed_req = urlparse(route.request.url)
+                parsed_allow = urlparse(allowed_origin)
+                if (
+                    parsed_req.scheme == parsed_allow.scheme
+                    and parsed_req.hostname == parsed_allow.hostname
+                    and (parsed_req.port or None) == (parsed_allow.port or None)
+                ):
+                    await route.continue_()
+                else:
+                    await route.abort()
+
+            await page.route("**/*", route_handler)
+
+            async def handle_dialog(dialog):
+                await dialog.accept()
+
+            page.on("dialog", handle_dialog)
+
+            try:
+                await page.goto(
+                    url,
+                    wait_until="networkidle",
+                    timeout=effective_timeout,
+                )
+            except Exception:
+                logger.debug(
+                    "render_dom_navigation_timeout",
+                    extra={"tx_id": tx_id},
+                )
+
+            rendered_html = await page.content()
+
+            logger.debug(
+                "render_dom_complete",
+                extra={"tx_id": tx_id, "length": len(rendered_html)},
+            )
+            return rendered_html
+
+        except Exception:
+            logger.warning(
+                "render_dom_failed",
+                extra={"tx_id": tx_id},
+                exc_info=True,
+            )
+            return None
+        finally:
+            if context:
+                try:
+                    await context.close()
+                except Exception:
+                    pass

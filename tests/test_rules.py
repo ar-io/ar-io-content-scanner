@@ -281,6 +281,22 @@ class TestExternalFormRule:
         result = self.rule.evaluate(html, soup)
         assert result.triggered is False
 
+    def test_rtc_peer_connection_exfil_triggers(self):
+        """RTCPeerConnection + password + external URL should trigger."""
+        from tests.fixtures import RTC_PEER_EXFIL
+
+        soup = parse_html(RTC_PEER_EXFIL)
+        result = self.rule.evaluate(RTC_PEER_EXFIL, soup)
+        assert result.triggered is True
+
+    def test_service_worker_exfil_triggers(self):
+        """Service worker registration + password + external URL should trigger."""
+        from tests.fixtures import SERVICE_WORKER_EXFIL
+
+        soup = parse_html(SERVICE_WORKER_EXFIL)
+        result = self.rule.evaluate(SERVICE_WORKER_EXFIL, soup)
+        assert result.triggered is True
+
 
 class TestWalletImpersonationRule:
     def setup_method(self):
@@ -385,6 +401,39 @@ class TestWalletImpersonationRule:
         <body><h1>Exodus Chapter 1</h1>
         <input type="password" placeholder="Access code">
         </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+
+    def test_brand_in_body_text_with_password_triggers(self):
+        """Brand in visible body text (not heading) + password should trigger."""
+        from tests.fixtures import WALLET_BODY_TEXT_PHISHING
+
+        soup = parse_html(WALLET_BODY_TEXT_PHISHING)
+        result = self.rule.evaluate(WALLET_BODY_TEXT_PHISHING, soup)
+        assert result.triggered is True
+
+    def test_brand_deep_in_text_single_mention_does_not_trigger(self):
+        """Brand mentioned once deep in article text should NOT trigger."""
+        from tests.fixtures import WALLET_BRAND_DEEP_IN_TEXT
+
+        soup = parse_html(WALLET_BRAND_DEEP_IN_TEXT)
+        result = self.rule.evaluate(WALLET_BRAND_DEEP_IN_TEXT, soup)
+        assert result.triggered is False
+
+    def test_brand_repeated_in_body_triggers(self):
+        """Brand repeated 3 times in body text + password should trigger."""
+        from tests.fixtures import WALLET_BRAND_REPEATED
+
+        soup = parse_html(WALLET_BRAND_REPEATED)
+        result = self.rule.evaluate(WALLET_BRAND_REPEATED, soup)
+        assert result.triggered is True
+
+    def test_ambiguous_brand_in_body_text_does_not_trigger(self):
+        """Ambiguous brand ('exodus') in body text should NOT trigger."""
+        html = """<html><head><title>Login</title></head>
+        <body><p>Welcome to Exodus</p><p>Exodus wallet recovery</p>
+        <input type="password" name="pw"></body></html>"""
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
         assert result.triggered is False

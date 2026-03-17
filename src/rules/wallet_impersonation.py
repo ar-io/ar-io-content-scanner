@@ -142,6 +142,18 @@ class WalletImpersonationRule(Rule):
                 for brand in AMBIGUOUS_BRANDS
                 if brand in prominent_normalized
             )
+        # Fallback: check visible body text for unambiguous brands only.
+        # Requires brand in the first 500 chars (prominent position) or
+        # appearing 2+ times anywhere (phishing kits plaster the brand).
+        if not matched_brands:
+            body_text = _normalize_text(soup.get_text())
+            body_head = body_text[:500]
+            for brand in WALLET_BRANDS:
+                brand_norm = brand.replace(" ", "")
+                if brand_norm in body_head or body_text.count(brand_norm) >= 2:
+                    matched_brands.append(brand)
+                    break  # one brand is enough
+
         signal_a = len(matched_brands) > 0
 
         # Signal B: credential capture — password input (including proxies)

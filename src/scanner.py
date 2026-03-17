@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 from bs4 import BeautifulSoup
 
@@ -35,6 +36,48 @@ except ImportError:
     ScanDispatcher = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger("scanner.core")
+
+# DOM manipulation patterns that indicate JS will modify page structure.
+# Used by _needs_rendered_scan() to decide whether a second-pass render is needed.
+_DOM_MANIPULATION_RE = re.compile(
+    r"document\.write|\.innerHTML|createElement|appendChild|"
+    r"insertBefore|\.outerHTML|replaceChild|insertAdjacentHTML|"
+    r"\.append\(|\.prepend\(",
+)
+
+
+def _needs_rendered_scan(html: str, soup: BeautifulSoup, result: ScanResult) -> bool:
+    """Decide whether a page needs a rendered DOM second-pass scan.
+
+    Returns True when all of:
+    1. Static rules returned CLEAN (already-flagged pages don't need re-scan)
+    2. Page has <script> tags
+    3. Scripts contain DOM manipulation patterns
+    4. Sparse static content (little visible text or few body elements)
+    """
+    if result.verdict != Verdict.CLEAN:
+        return False
+
+    scripts = soup.find_all("script")
+    if not scripts:
+        return False
+
+    script_text = " ".join(s.get_text() for s in scripts)
+    if not _DOM_MANIPULATION_RE.search(script_text):
+        return False
+
+    # Check for sparse static content
+    visible_text = soup.get_text(strip=True)
+    if len(visible_text) < 200:
+        return True
+
+    body = soup.find("body")
+    if body:
+        non_script_tags = [t for t in body.find_all(True) if t.name != "script"]
+        if len(non_script_tags) < 10:
+            return True
+
+    return False
 
 HTML_SIGNATURES = [
     b"<!doctype html",
@@ -426,6 +469,71 @@ class Scanner:
                 loop.run_in_executor(None, self.engine.evaluate, html, soup),
                 timeout=timeout_s,
             )
+
+            # Check data: URI / srcdoc iframes for embedded phishing
+            if result.verdict == Verdict.CLEAN:
+                from src.rules.iframe_scanner import extract_iframe_content
+
+                iframe_htmls = extract_iframe_content(soup)
+                for iframe_html in iframe_htmls:
+                    iframe_soup = parse_html(iframe_html)
+                    iframe_result = self.engine.evaluate(iframe_html, iframe_soup)
+                    if iframe_result.verdict != Verdict.CLEAN:
+                        iframe_result.matched_rules = [
+                            f"iframe:{r}" for r in iframe_result.matched_rules
+                        ]
+                        result = iframe_result
+                        logger.warning(
+                            "iframe_content_detection",
+                            extra={
+                                "tx_id": tx_id,
+                                "verdict": result.verdict.value,
+                                "rules": result.matched_rules,
+                            },
+                        )
+                        break
+
+            # Rendered DOM two-pass scan: if static scan is CLEAN but page
+            # looks like a JS shell, render in Playwright and re-run rules.
+            if (
+                result.verdict == Verdict.CLEAN
+                and self.settings.rendered_dom_scan_enabled
+                and self.screenshot
+                and self.screenshot.available
+                and _needs_rendered_scan(html, soup, result)
+            ):
+                rendered_html = await self.screenshot.render_dom(
+                    tx_id, timeout_ms=self.settings.scan_timeout_ms,
+                )
+                if rendered_html:
+                    rendered_soup = await asyncio.wait_for(
+                        loop.run_in_executor(None, parse_html, rendered_html),
+                        timeout=timeout_s,
+                    )
+                    rendered_result = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None, self.engine.evaluate,
+                            rendered_html, rendered_soup,
+                        ),
+                        timeout=timeout_s,
+                    )
+                    self.metrics.record_rendered_scan(
+                        detected=rendered_result.verdict != Verdict.CLEAN,
+                    )
+                    if rendered_result.verdict != Verdict.CLEAN:
+                        rendered_result.matched_rules = [
+                            f"rendered:{r}" for r in rendered_result.matched_rules
+                        ]
+                        result = rendered_result
+                        logger.warning(
+                            "rendered_dom_detection",
+                            extra={
+                                "tx_id": tx_id,
+                                "verdict": result.verdict.value,
+                                "rules": result.matched_rules,
+                                "ml_score": result.ml_score,
+                            },
+                        )
         elif (
             self.dispatcher
             and effective_content_type

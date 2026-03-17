@@ -51,6 +51,9 @@ class Settings:
     # Content scanner toggles
     scanner_example_image: bool = False
 
+    # Rendered DOM scanning
+    rendered_dom_scan_enabled: bool = True
+
     # Content limits
     max_scan_bytes: int = 262144  # 256KB
     scan_timeout_ms: int = 10000
@@ -240,6 +243,10 @@ def load_settings() -> Settings:
         == "true",
         scanner_example_image=os.environ.get(
             "SCANNER_EXAMPLE_IMAGE", "false"
+        ).lower()
+        == "true",
+        rendered_dom_scan_enabled=os.environ.get(
+            "RENDERED_DOM_SCAN_ENABLED", "true"
         ).lower()
         == "true",
         max_scan_bytes=max_scan_bytes,
