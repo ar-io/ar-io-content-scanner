@@ -80,11 +80,11 @@ Gateway domain flagged → logged as error (critical alert)
 GATEWAY_PUBLIC_URL required to enable domain monitoring
 ```
 
-### Detection Rules (all conjunctive: Signal A AND Signal B)
+### Detection Rules (all conjunctive: multiple independent signals required)
 
-| Rule | Signal A | Signal B |
-|------|----------|----------|
-| `seed-phrase-harvesting` | 8+ text inputs | Seed phrase terminology in visible text |
+| Rule | Signals |
+|------|---------|
+| `seed-phrase-harvesting` | 6+ text inputs AND seed phrase terminology AND external data transmission |
 | `external-credential-form` | Password input | Form action is absolute URL OR JS exfil patterns ($.ajax, fetch, etc.) with external URL |
 | `wallet-impersonation` | Crypto brand in title/headings/img alt/body text | Password input or key-phrase terminology |
 | `obfuscated-loader` | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
@@ -114,6 +114,28 @@ Arweave content is static with no server-side backend. Password forms posting to
 - **ML model uses `xgb.Booster`** (not `XGBClassifier`) for cross-version compatibility. The `.pkl` file is a raw xgboost binary model despite the extension.
 - **ML never auto-blocks.** The XGBoost classifier can only escalate CLEAN to SUSPICIOUS, never to MALICIOUS.
 - **Rules must remain conjunctive.** Every rule requires 2+ independent signals. Single-signal rules risk false positives.
+- **Fail-open for external APIs.** External service errors (Safe Browsing, peer feeds, content scanner APIs) must never affect scanning or block legitimate content.
+- **Conventional commits.** Commit messages follow the [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) style (e.g., `feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
+
+## Adding New Detection Rules
+
+1. Create `src/rules/your_rule.py` implementing the `Rule` ABC from `src/rules/base.py`
+2. The rule **must** require 2+ independent signals (conjunctive logic)
+3. Add a toggle to `Settings` in `src/config.py` (e.g., `rule_your_rule: bool = True`) and read the env var in `load_settings()`
+4. Register the rule in `RuleEngine.__init__()` in `src/rules/engine.py`
+5. Add test cases in `tests/test_rules.py` with HTML fixtures in `tests/fixtures.py`
+6. Add the toggle to `.env.example` and document in `README.md`
+
+## Adding New Content Scanners
+
+1. Create `src/scanners/your_scanner.py` implementing the `ContentScanner` ABC from `src/scanners/base.py`
+2. Implement: `name` property, `supported_content_types` property (MIME patterns), `evaluate()` async method
+3. Add a toggle to `Settings` in `src/config.py` and read the env var in `load_settings()`
+4. Register the scanner in `build_app()` in `src/server.py`, gated by the toggle
+5. Add tests in `tests/test_scanners.py` and `tests/test_scanner_content_routing.py`
+6. Add the toggle to `.env.example` and document in `README.md`
+
+See `src/scanners/example_image_scanner.py` for a reference implementation.
 
 ## Environment Variables
 

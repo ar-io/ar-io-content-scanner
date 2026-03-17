@@ -106,7 +106,7 @@ Each rule requires 2+ independent signals (conjunctive logic) to ensure near-zer
 
 | Rule | Signal A | Signal B |
 |------|----------|----------|
-| **Seed Phrase Harvesting** | 8+ text inputs | Seed phrase terminology in visible text |
+| **Seed Phrase Harvesting** | 6+ text inputs + seed phrase terminology | External data transmission (form action or JS exfil with external URL) |
 | **External Credential Form** | Password input | Form action is absolute URL, or JS exfil patterns with external URL |
 | **Wallet Impersonation** | Crypto brand in title/headings/img alt/body text | Password input or key-phrase terminology |
 | **Obfuscated Loader** | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |

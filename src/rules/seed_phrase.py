@@ -1,11 +1,16 @@
 """Rule 1: Seed Phrase Harvesting
 
-Signals (both required):
+Signals (all three required):
   A. 6+ text-like input elements (including textarea and contenteditable
      proxies that phishing kits use to evade <input>-only detection)
   B. Seed phrase terminology in visible text
+  C. External data transmission — form action with absolute URL, or JS
+     exfiltration patterns with external URL (same detection as the
+     external credential form rule)
 
-No legitimate wallet asks users to type seed phrases into a web page.
+Signal C distinguishes phishing pages (which must exfiltrate the entered
+words to the attacker) from legitimate Arweave wallet tools (like ArDrive)
+that process seed phrases entirely client-side.
 """
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ from bs4 import BeautifulSoup
 
 from src.models import RuleResult
 from src.rules.base import Rule
+from src.rules.utils import has_external_data_transmission
 
 SEED_TERMS = [
     r"recovery\s*phrase",
@@ -73,14 +79,19 @@ class SeedPhraseRule(Rule):
         ]
         signal_b = len(matched_terms) > 0
 
+        # Signal C: external data transmission
+        signal_c, exfil_details = has_external_data_transmission(soup)
+
         return RuleResult(
             rule_name=self.name,
-            triggered=signal_a and signal_b,
+            triggered=signal_a and signal_b and signal_c,
             signals={
                 "input_count": input_count,
                 "textarea_count": textarea_count,
                 "editable_count": editable_count,
                 "total_inputs": total_inputs,
                 "seed_terms_found": matched_terms,
+                "has_exfiltration": signal_c,
+                **exfil_details,
             },
         )
