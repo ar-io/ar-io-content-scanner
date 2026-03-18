@@ -508,8 +508,10 @@ class ScannerDB:
             conditions.append("v.source = 'local' AND v.tx_id != 'backfill'")
         elif source_filter == "backfill":
             conditions.append("v.tx_id = 'backfill'")
+        elif source_filter == "manual":
+            conditions.append("v.source = 'manual'")
         elif source_filter == "feed":
-            conditions.append("v.source != 'local'")
+            conditions.append("v.source != 'local' AND v.source != 'manual'")
 
         if period != "all":
             seconds = {"24h": 86400, "7d": 604800, "30d": 2592000}.get(period)
@@ -827,13 +829,14 @@ class ScannerDB:
 
     def get_feed_import_stats(self) -> dict:
         row = self.conn.execute(
-            "SELECT COUNT(*) FROM scan_verdicts WHERE source != 'local'"
+            "SELECT COUNT(*) FROM scan_verdicts "
+            "WHERE source != 'local' AND source != 'manual'"
         ).fetchone()
         total = row[0] if row else 0
 
         by_source = self.conn.execute(
             "SELECT source, COUNT(*) FROM scan_verdicts "
-            "WHERE source != 'local' GROUP BY source"
+            "WHERE source != 'local' AND source != 'manual' GROUP BY source"
         ).fetchall()
 
         return {

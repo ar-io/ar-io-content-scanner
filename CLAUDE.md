@@ -58,7 +58,7 @@ After scanning → caches verdict in `scan_verdicts` table → checks Google Saf
 - **`screenshot.py`**: `ScreenshotService` uses Playwright (headless Chromium) to capture screenshots of flagged content and render DOM for two-pass scanning (`render_dom()`). Network-isolated: only gateway-origin requests are allowed. Screenshots stored as `{SCREENSHOT_DIR}/{content_hash}.jpg`, deleted when admin confirms/dismisses.
 - **`feed/`**: Peer-to-peer verdict sharing. `client.py` (`FeedClient`) is an async httpx client for fetching verdicts from peers. `poller.py` (`FeedPoller`) periodically syncs new verdicts from configured peer URLs using cursor-based pagination. `routes.py` exposes `GET /api/verdicts` (paginated feed) and `GET /api/verdicts/{hash}` (single lookup) for peers to consume. `auth.py` provides Bearer token auth via `VERDICT_API_KEY`. Only exports `source='local'` verdicts to prevent echo loops.
 - **`scanners/`**: Pluggable content scanner framework (Tier 2). `base.py` defines the `ContentScanner` ABC, `ContentMetadata`, and `ContentScannerResult`. `registry.py` (`ContentScannerRegistry`) matches scanners to MIME types via fnmatch patterns. `dispatcher.py` (`ScanDispatcher`) sits above both tiers, routing HTML to `RuleEngine` and non-HTML to matching content scanners (concurrent via `asyncio.gather`, fail-open). `sniff.py` detects MIME types from magic bytes for backfill. `example_image_scanner.py` is a disabled-by-default stub for `image/*`.
-- **`admin/routes.py`**: Admin API router built via `build_admin_router(app_state)`. Uses `_state.db` accessor pattern (reads from `app_state` at request time, not build time) so tests can replace DB after `build_app()`.
+- **`admin/routes.py`**: Admin API router built via `build_admin_router(app_state)`. Uses `_state.db` accessor pattern (reads from `app_state` at request time, not build time) so tests can replace DB after `build_app()`. Includes `POST /api/admin/block` for manual blocking by TX ID (always calls gateway, not mode-gated).
 - **`admin/auth.py`**: FastAPI Bearer token dependency factory for `SCANNER_ADMIN_KEY` authentication.
 
 ### Verdict Matrix
@@ -96,12 +96,13 @@ GATEWAY_PUBLIC_URL required to enable domain monitoring
 
 ### Admin Frontend
 
-The admin dashboard (`src/templates/admin/`, `src/static/admin/`) uses Alpine.js 3.x with global stores (`$store.auth`, `$store.health`, `$store.toast`). Each tab (dashboard, history, review, settings) has its own JS file defining an Alpine component. The frontend authenticates via `SCANNER_ADMIN_KEY` passed as a Bearer token. Key patterns:
+The admin dashboard (`src/templates/admin/`, `src/static/admin/`) uses Alpine.js 3.x with global stores (`$store.auth`, `$store.health`, `$store.toast`). Each tab (dashboard, history, review, block, settings) has its own JS file defining an Alpine component. The frontend authenticates via `SCANNER_ADMIN_KEY` passed as a Bearer token. Key patterns:
 
 - `base.html` handles login, tab routing, and Alpine store initialization.
 - Dashboard auto-refreshes every 30 seconds. Detection rows dispatch `search-review` events to cross-link to the review tab.
-- History tab supports verdict/source/period filters, pagination, and CSV export.
+- History tab supports verdict/source/period filters (including `manual` source), pagination, and CSV export.
 - Review tab provides confirm/dismiss actions for flagged content.
+- Manual Block tab (`block.html`/`block.js`) lets operators block transactions by TX ID. Uses `POST /api/admin/block`, always calls the gateway regardless of scanner mode. Creates verdict (`source='manual'`) and override records. Blocks appear in history (filterable by `manual` source) and review queue (as confirmed). Manual blocks are not exported via verdict feed.
 
 ### Why This Works on Arweave
 

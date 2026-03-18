@@ -1,6 +1,7 @@
 """Tests for admin API endpoints and override enforcement."""
 
 import json
+import re
 import time
 from unittest.mock import AsyncMock
 
@@ -517,3 +518,253 @@ class TestEnforceModeActions:
         assert data["status"] == "reverted"
         assert "blocked" not in data
         assert "unblocked" not in data
+
+
+# A valid 43-char base64url TX ID for manual block tests
+VALID_TX_ID = "xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ"
+
+
+class TestManualBlock:
+    """Test the POST /api/admin/block manual block endpoint."""
+
+    @pytest.fixture
+    def block_settings(self, tmp_path):
+        return Settings(
+            gateway_url="http://localhost:4000",
+            admin_api_key="gateway-key",
+            scanner_admin_key="test-admin-key",
+            admin_ui_enabled=True,
+            ml_model_enabled=False,
+            db_path=str(tmp_path / "test.db"),
+            scanner_mode="dry-run",
+        )
+
+    @pytest.fixture
+    def block_db(self, block_settings):
+        _db = ScannerDB(block_settings.db_path)
+        _db.initialize()
+        return _db
+
+    @pytest.fixture
+    def block_app(self, block_settings, block_db):
+        a = build_app(block_settings)
+        a.state.db = block_db
+        mock_gw = AsyncMock()
+        mock_gw.block_data = AsyncMock(return_value=True)
+        mock_gw.unblock_data = AsyncMock(return_value=True)
+        a.state.gateway = mock_gw
+        return a
+
+    @pytest.fixture
+    def block_client(self, block_app):
+        return TestClient(block_app)
+
+    def test_manual_block_creates_verdict_and_override(self, block_client, block_db):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID, "reason": "reported phishing"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "blocked"
+        assert data["tx_id"] == VALID_TX_ID
+
+        verdict = block_db.get_verdict(VALID_TX_ID)
+        assert verdict is not None
+        assert verdict.verdict == Verdict.MALICIOUS
+        assert verdict.source == "manual"
+        assert verdict.matched_rules == '["manual-block"]'
+
+        override = block_db.get_override(VALID_TX_ID)
+        assert override is not None
+        assert override.admin_verdict == "confirmed_malicious"
+        assert override.notes == "reported phishing"
+
+    def test_manual_block_calls_gateway(self, block_client, block_app):
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID, "reason": "known scam"},
+        )
+        block_app.state.gateway.block_data.assert_called_once_with(
+            VALID_TX_ID,
+            VALID_TX_ID,
+            ["manual-block"],
+            notes="Manual block: known scam",
+        )
+
+    def test_manual_block_without_reason(self, block_client, block_app):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        assert resp.status_code == 200
+        block_app.state.gateway.block_data.assert_called_once_with(
+            VALID_TX_ID,
+            VALID_TX_ID,
+            ["manual-block"],
+            notes="Manual block",
+        )
+
+    def test_manual_block_marks_blocked(self, block_client, block_db):
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        row = block_db.conn.execute(
+            "SELECT blocked FROM scan_verdicts WHERE content_hash = ?",
+            (VALID_TX_ID,),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 1
+
+    def test_manual_block_gateway_failure(self, block_client, block_app, block_db):
+        block_app.state.gateway.block_data = AsyncMock(return_value=False)
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID, "reason": "test"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["blocked"] is False
+
+        # Verdict and override should still exist
+        assert block_db.get_verdict(VALID_TX_ID) is not None
+        assert block_db.get_override(VALID_TX_ID) is not None
+
+    def test_manual_block_invalid_tx_id(self, block_client):
+        for bad_id in ["short", "x" * 44, "aBcDeFgHiJkLmNoPqRsTuVwXyZ012345678!!!!!!!", ""]:
+            resp = block_client.post(
+                "/api/admin/block",
+                headers={**AUTH, "Content-Type": "application/json"},
+                json={"tx_id": bad_id},
+            )
+            assert resp.status_code == 400, f"Expected 400 for tx_id={bad_id!r}"
+
+    def test_manual_block_requires_auth(self, block_client):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={"Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        assert resp.status_code == 401
+
+    def test_manual_block_already_exists(self, block_client, block_db):
+        # Pre-existing verdict from a scan
+        block_db.save_verdict(
+            VALID_TX_ID, VALID_TX_ID, Verdict.CLEAN, "[]", 0.1, "0.1.0"
+        )
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID, "reason": "actually malicious"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["already_existed"] is True
+
+        # Verdict should be overwritten
+        verdict = block_db.get_verdict(VALID_TX_ID)
+        assert verdict.verdict == Verdict.MALICIOUS
+        assert verdict.source == "manual"
+
+        # Override should preserve the original verdict for revert
+        override = block_db.get_override(VALID_TX_ID)
+        assert override.original_verdict == "clean"
+
+    def test_manual_block_appears_in_history(self, block_client, block_db):
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        resp = block_client.get(
+            "/api/admin/history?source=manual", headers=AUTH
+        )
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["tx_id"] == VALID_TX_ID
+
+    def test_manual_block_appears_in_review(self, block_client, block_db):
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        resp = block_client.get(
+            "/api/admin/review?status=confirmed", headers=AUTH
+        )
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["tx_id"] == VALID_TX_ID
+
+    def test_manual_block_revertable(self, block_client, block_db, block_app):
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        resp = block_client.post(
+            f"/api/admin/review/{VALID_TX_ID}/revert",
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "reverted"
+        assert data["restored_verdict"] == "skipped"
+
+        # Override should be deleted
+        assert block_db.get_override(VALID_TX_ID) is None
+
+        # Verdict should be restored to skipped
+        verdict = block_db.get_verdict(VALID_TX_ID)
+        assert verdict.verdict == Verdict.SKIPPED
+
+    def test_manual_block_revert_preserves_original_verdict(self, block_client, block_db):
+        """Reverting a manual block on a pre-existing CLEAN verdict restores CLEAN."""
+        block_db.save_verdict(
+            VALID_TX_ID, VALID_TX_ID, Verdict.CLEAN, "[]", 0.1, "0.1.0"
+        )
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        block_client.post(
+            f"/api/admin/review/{VALID_TX_ID}/revert",
+            headers=AUTH,
+        )
+        verdict = block_db.get_verdict(VALID_TX_ID)
+        assert verdict.verdict == Verdict.CLEAN
+
+    def test_manual_block_malformed_json(self, block_client):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            content=b"{broken",
+        )
+        assert resp.status_code == 400
+
+    def test_history_filter_manual_source(self, block_client, block_db):
+        # Create a mix of sources
+        block_db.save_verdict("h1", "tx1", Verdict.CLEAN, "[]", 0.1, "0.1.0")
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        # Total history should have both
+        resp = block_client.get("/api/admin/history", headers=AUTH)
+        assert resp.json()["total"] == 2
+
+        # Manual filter should only return the manual block
+        resp = block_client.get(
+            "/api/admin/history?source=manual", headers=AUTH
+        )
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["source"] == "manual"

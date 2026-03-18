@@ -501,6 +501,81 @@ def build_admin_router(app_state) -> APIRouter:
             result["unblocked"] = unblocked
         return result
 
+    @router.post("/api/admin/block")
+    async def manual_block(
+        request: Request,
+        _key: str = Depends(auth),
+    ):
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        tx_id = body.get("tx_id", "")
+        reason = str(body.get("reason", ""))[:500]
+
+        if not isinstance(tx_id, str) or not _BASE64URL_43.match(tx_id):
+            raise HTTPException(status_code=400, detail="Invalid TX ID")
+
+        db = _state.db
+        already_existed = db.has_verdict(tx_id)
+
+        # Store the real original verdict for revert support.
+        # If no prior verdict exists, use "skipped" as a sentinel
+        # so revert knows to unblock (original was not malicious).
+        existing = db.get_verdict(tx_id)
+        original_verdict = existing.verdict.value if existing else "skipped"
+
+        db.save_verdict(
+            content_hash=tx_id,
+            tx_id=tx_id,
+            verdict=Verdict.MALICIOUS,
+            matched_rules='["manual-block"]',
+            ml_score=None,
+            scanner_version=settings.scanner_version,
+            source="manual",
+        )
+
+        db.save_override(
+            content_hash=tx_id,
+            tx_id=tx_id,
+            admin_verdict="confirmed_malicious",
+            original_verdict=original_verdict,
+            original_rules='["manual-block"]',
+            original_ml_score=existing.ml_score if existing else None,
+            notes=reason,
+        )
+
+        gateway = _state.gateway
+        notes_text = f"Manual block: {reason}" if reason else "Manual block"
+        blocked = False
+        try:
+            blocked = await gateway.block_data(
+                tx_id, tx_id, ["manual-block"], notes=notes_text
+            )
+        except Exception:
+            logger.exception(
+                "manual_block_gateway_error", extra={"tx_id": tx_id}
+            )
+
+        if blocked:
+            db.mark_blocked(tx_id)
+
+        logger.info(
+            "manual_block",
+            extra={
+                "tx_id": tx_id,
+                "reason": reason,
+                "blocked": blocked,
+            },
+        )
+
+        return {
+            "status": "blocked",
+            "tx_id": tx_id,
+            "blocked": blocked,
+            "already_existed": already_existed,
+        }
+
     @router.get("/api/admin/history")
     async def history_list(
         q: str = Query(""),

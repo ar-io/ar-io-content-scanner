@@ -86,13 +86,14 @@
     </div>
 
     <!-- Tabs -->
-    <div x-data="{ activeTab: (['dashboard','review','history','settings'].indexOf(location.hash.substring(1)) !== -1 ? location.hash.substring(1) : 'dashboard') }"
+    <div x-data="{ activeTab: (['dashboard','review','history','block','settings'].indexOf(location.hash.substring(1)) !== -1 ? location.hash.substring(1) : 'dashboard') }"
          x-init="$watch('activeTab', function(v) { history.replaceState(null, '', '#' + v) })"
          @switch-tab="activeTab = $event.detail" class="content-area" style="padding: 0 32px;">
       <div class="tab-bar" style="margin: 0 -32px;">
         <button class="tab-btn" :class="{ active: activeTab === 'dashboard' }" @click="activeTab = 'dashboard'">Dashboard</button>
         <button class="tab-btn" :class="{ active: activeTab === 'review' }" @click="activeTab = 'review'">Review Queue</button>
         <button class="tab-btn" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">Scan History</button>
+        <button class="tab-btn" :class="{ active: activeTab === 'block' }" @click="activeTab = 'block'">Manual Block</button>
         <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">Settings</button>
       </div>
 
@@ -105,6 +106,9 @@
         </div>
         <div x-show="activeTab === 'history'">
           {% include "admin/history.html" %}
+        </div>
+        <div x-show="activeTab === 'block'">
+          {% include "admin/block.html" %}
         </div>
         <div x-show="activeTab === 'settings'">
           {% include "admin/settings.html" %}
@@ -121,6 +125,7 @@
   <script src="/static/admin/dashboard.js"></script>
   <script src="/static/admin/review.js"></script>
   <script src="/static/admin/history.js"></script>
+  <script src="/static/admin/block.js"></script>
   <script src="/static/admin/settings.js"></script>
 </body>
 </html>

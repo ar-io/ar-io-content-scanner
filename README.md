@@ -196,11 +196,22 @@ The dashboard provides:
 - **Dashboard** — real-time stats, system health, backfill status, Google Safe Browsing status, recent detections
 - **Review Queue** — confirm or dismiss flagged content with screenshot previews and Safe Browsing indicators
 - **Scan History** — searchable, filterable log of all scans with CSV export
+- **Manual Block** — block any Arweave transaction by TX ID without waiting for detection
 - **Settings** — current configuration, rule status, database stats, training data export
 
 Screenshots of flagged content are captured automatically using a headless Chromium browser (network-isolated to the gateway origin). Screenshots are displayed in the review queue and deleted when an admin confirms or dismisses the item.
 
 Admin actions (confirm/dismiss) create overrides that persist across restarts. Dismissed content is never re-flagged. Confirmed content is always blocked in enforce mode.
+
+### Manual Block
+
+Use the Manual Block tab to immediately block an Arweave transaction by TX ID. This is useful for content reported through external channels or known-bad transactions that the scanner hasn't detected yet. Manual blocks:
+
+- **Always block the gateway** regardless of scanner mode (dry-run or enforce) — this is an explicit operator action
+- Create a MALICIOUS verdict with `source='manual'` and a `confirmed_malicious` admin override
+- Appear in Scan History (filterable by "manual" source) and Review Queue (under "confirmed" status)
+- Can be reverted from the Review Queue, which restores the previous verdict and unblocks the content
+- Are **not exported** via the verdict feed to prevent operator decisions from propagating to peers
 
 ## HTTP Endpoints
 
@@ -218,6 +229,7 @@ Admin actions (confirm/dismiss) create overrides that persist across restarts. D
 | `/api/admin/review/:hash/revert` | POST | Revert a previous confirm/dismiss |
 | `/api/admin/screenshot/:hash` | GET | Screenshot image (JPEG) for flagged content |
 | `/api/admin/preview/:txid` | GET | Raw HTML source preview |
+| `/api/admin/block` | POST | Manually block a transaction by TX ID |
 | `/api/admin/history` | GET | Paginated scan history |
 | `/api/admin/history/export` | GET | CSV export of scan history |
 | `/api/admin/settings` | GET | Current scanner configuration |

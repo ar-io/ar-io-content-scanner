@@ -59,7 +59,11 @@ class GatewayClient:
         tx_id: str,
         content_hash: str,
         matched_rules: list[str],
+        *,
+        notes: str | None = None,
     ) -> bool:
+        if notes is None:
+            notes = f"Auto-blocked: {', '.join(matched_rules)}"
         for attempt in range(2):
             try:
                 resp = await self._client.put(
@@ -68,7 +72,7 @@ class GatewayClient:
                         "id": tx_id,
                         "hash": content_hash,
                         "source": "content-scanner",
-                        "notes": f"Auto-blocked: {', '.join(matched_rules)}",
+                        "notes": notes,
                     },
                     headers={
                         "Authorization": f"Bearer {self.admin_api_key}",

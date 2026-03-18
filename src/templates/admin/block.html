@@ -1,0 +1,109 @@
+<!-- Manual Block Tab -->
+<div x-data="blockTab" @close-modal.window="confirmDialog.show = false">
+  <div class="section-header">
+    <h2>Manual Block</h2>
+    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block an Arweave transaction by TX ID. This bypasses scanner detection and blocks immediately regardless of scanner mode.</p>
+  </div>
+
+  <template x-if="error">
+    <div class="error-banner">
+      <span x-text="error"></span>
+      <button @click="error = ''" class="btn btn-sm btn-outline">Dismiss</button>
+    </div>
+  </template>
+
+  <!-- Block Form -->
+  <div class="card" style="margin-bottom: 24px; padding: 24px;">
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID</label>
+      <input type="text" x-model="txId" placeholder="e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ"
+        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.9rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box;"
+        @input="validationError = ''" @keyup.enter="promptBlock()">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+        <template x-if="validationError">
+          <p style="color: var(--color-red); font-size: 0.8rem; margin: 0;" x-text="validationError"></p>
+        </template>
+        <template x-if="!validationError"><span></span></template>
+        <span style="font-size: 0.75rem; color: var(--color-gray);" :style="txId.trim().length === 43 ? 'color: var(--color-green)' : ''" x-text="txId.trim().length + '/43'"></span>
+      </div>
+    </div>
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Reason (optional)</label>
+      <textarea x-model="reason" placeholder="Why is this transaction being blocked? (e.g., reported phishing, known scam)" rows="3"
+        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical;"></textarea>
+    </div>
+    <button class="btn btn-danger" @click="promptBlock()" :disabled="!txId.trim() || loading">
+      Block Transaction
+    </button>
+  </div>
+
+  <!-- Recent manual blocks (session-local) -->
+  <template x-if="recentBlocks.length > 0">
+    <div>
+      <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 12px;">Recent Manual Blocks (this session)</h3>
+      <div class="card" style="padding: 0; overflow-x: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>TX ID</th>
+              <th>Reason</th>
+              <th>Gateway Blocked</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="b in recentBlocks" :key="b.tx_id + b.time">
+              <tr>
+                <td>
+                  <template x-if="txUrl(b.tx_id)">
+                    <a :href="txUrl(b.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
+                  </template>
+                  <template x-if="!txUrl(b.tx_id)">
+                    <span class="mono" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id"></span>
+                  </template>
+                  <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(b.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+                    <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                    <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </td>
+                <td><span x-text="b.reason || '\u2014'" style="font-size: 0.85rem;"></span></td>
+                <td>
+                  <span x-show="b.blocked" style="color: var(--color-green); font-weight: 600;">Yes</span>
+                  <span x-show="!b.blocked" style="color: var(--color-red); font-weight: 600;">Failed</span>
+                </td>
+                <td style="white-space: nowrap; font-size: 0.85rem;" x-text="b.time"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </template>
+
+  <!-- Confirmation Dialog -->
+  <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="confirmDialog.show = false" x-transition>
+    <div class="confirm-dialog">
+      <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">Block Transaction</h3>
+      <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 16px; line-height: 1.5;">
+        This will immediately block the transaction on the gateway. The block applies regardless of scanner mode (dry-run or enforce). You can revert this from the Review Queue later.
+      </p>
+      <div style="margin-bottom: 12px; font-size: 0.85rem;">
+        <span style="color: var(--color-gray);">TX ID: </span>
+        <span class="mono" x-text="confirmDialog.txId" style="word-break: break-all;"></span>
+      </div>
+      <template x-if="confirmDialog.reason">
+        <div style="margin-bottom: 12px; font-size: 0.85rem;">
+          <span style="color: var(--color-gray);">Reason: </span>
+          <span x-text="confirmDialog.reason"></span>
+        </div>
+      </template>
+      <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
+        <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false">Cancel</button>
+        <button class="btn btn-danger btn-sm" @click="executeBlock()" :disabled="loading">
+          <span x-show="!loading">Block Transaction</span>
+          <span x-show="loading" class="spinner"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

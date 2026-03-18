@@ -74,7 +74,8 @@ The dashboard provides:
 
 - **Dashboard** — real-time stats, system health, backfill status, Google Safe Browsing status, recent detections with 30-second auto-refresh
 - **Review Queue** — confirm or dismiss flagged content with screenshot previews and Safe Browsing indicators
-- **Scan History** — searchable, filterable log of all scans with CSV export
+- **Scan History** — searchable, filterable log of all scans with CSV export (filter by source: webhook, feed, backfill, manual)
+- **Manual Block** — block any Arweave transaction by TX ID without waiting for scanner detection
 - **Settings** — current configuration, rule status, database stats, training data export
 
 Screenshots of flagged content are captured automatically using a headless browser (included in the Docker image). They appear as thumbnails in the review queue, making it easy to identify phishing pages at a glance. Screenshots are deleted when you confirm or dismiss an item.
@@ -94,6 +95,20 @@ When you confirm or dismiss a detection, an **admin override** is created:
 - **Revert**: Removes the admin override and restores the original scanner verdict. In enforce mode, blocking state is updated to match the restored verdict (re-blocks if reverting a dismiss of malicious content, unblocks if reverting a confirm of non-malicious content).
 
 Overrides persist in the database across container restarts.
+
+### Manual Block
+
+The **Manual Block** tab lets you block any Arweave transaction by its 43-character TX ID. Use this for:
+
+- Content reported through external channels (e.g., abuse reports, community flags)
+- Known-bad transactions identified outside the scanner's detection rules
+- Emergency blocks while investigating suspicious content
+
+Manual blocks **always call the gateway block API**, regardless of whether the scanner is in dry-run or enforce mode. This is intentional — a manual block is an explicit operator decision, not an automated action.
+
+To undo a manual block, find it in the Review Queue (filter by "confirmed" status) and use the **Revert** action. This restores the previous verdict and sends an unblock request to the gateway.
+
+Manual blocks are recorded with `source=manual` in the database. They appear in Scan History (filterable by "manual" source) but are **not exported** via the verdict feed, so they don't propagate to peer scanners.
 
 ## Monitoring
 
