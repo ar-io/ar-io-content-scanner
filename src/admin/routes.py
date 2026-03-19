@@ -680,6 +680,36 @@ def build_admin_router(app_state) -> APIRouter:
             },
         )
 
+    @router.get("/api/admin/block/export")
+    async def block_export(
+        source: str = Query("all"),
+        _key: str = Depends(auth),
+    ):
+        """Export blocked TX IDs as plain text (one per line).
+
+        Paste the output directly into the block form on another gateway.
+        source=all returns all malicious, source=manual returns only manual blocks.
+        """
+        db = _state.db
+        conditions = ["v.verdict = 'malicious'"]
+        if source == "manual":
+            conditions.append("v.source = 'manual'")
+
+        where = "WHERE " + " AND ".join(conditions)
+        rows = db.conn.execute(
+            f"SELECT DISTINCT v.tx_id FROM scan_verdicts v {where} "
+            "ORDER BY v.scanned_at DESC",
+        ).fetchall()
+        tx_ids = [r[0] for r in rows if r[0] != "backfill"]
+        text = "\n".join(tx_ids) + "\n" if tx_ids else ""
+
+        return PlainTextResponse(
+            content=text,
+            headers={
+                "Content-Disposition": f"attachment; filename=blocked_tx_ids.txt"
+            },
+        )
+
     @router.get("/api/admin/preview/{tx_id}")
     async def content_preview(
         tx_id: str,

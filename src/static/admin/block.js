@@ -155,6 +155,29 @@ document.addEventListener('alpine:init', function () {
         this.loading = false;
       },
 
+      async exportBlockedTxIds(source) {
+        try {
+          var resp = await api('/api/admin/block/export?source=' + source);
+          if (!resp.ok) throw new Error('Export failed (HTTP ' + resp.status + ')');
+          var text = await resp.text();
+          if (!text.trim()) {
+            Alpine.store('toast').show('No blocked TX IDs to export', 'info');
+            return;
+          }
+          var blob = new Blob([text], { type: 'text/plain' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = source === 'manual' ? 'manual_blocked_tx_ids.txt' : 'all_blocked_tx_ids.txt';
+          a.click();
+          URL.revokeObjectURL(url);
+          var count = text.trim().split('\n').length;
+          Alpine.store('toast').show('Exported ' + count + ' TX IDs', 'success');
+        } catch (e) {
+          Alpine.store('toast').show('Export failed: ' + (e.message || 'Unknown error'), 'error');
+        }
+      },
+
       _showBulkToast(result) {
         var blockedCount = result.results
           ? result.results.filter(function (r) { return r.blocked; }).length

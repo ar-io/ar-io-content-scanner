@@ -41,6 +41,8 @@
       <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;">Manual Blocks</h3>
       <div style="display: flex; align-items: center; gap: 8px;">
         <span style="font-size: 0.8rem; color: var(--color-gray);" x-text="historyTotal + ' total'"></span>
+        <button class="btn btn-sm btn-outline" @click="exportBlockedTxIds('manual')" title="Export manual block TX IDs as text" style="font-size: 0.75rem;">Export TX IDs</button>
+        <button class="btn btn-sm btn-outline" @click="exportBlockedTxIds('all')" title="Export ALL blocked TX IDs (scanner + manual)" style="font-size: 0.75rem;">Export All Blocked</button>
         <button class="btn btn-sm btn-outline" @click="loadHistory()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       </div>
     </div>

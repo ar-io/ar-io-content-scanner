@@ -871,3 +871,49 @@ class TestManualBlock:
         assert "already_existed" in data
         # Should NOT have results array
         assert "results" not in data
+
+    def test_export_manual_blocked_tx_ids(self, block_client, block_db):
+        """Export returns only manual block TX IDs."""
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": [VALID_TX_ID, VALID_TX_ID_2]},
+        )
+        # Also add a scanner-detected malicious verdict
+        block_db.save_verdict("h1", "tx_scan", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+
+        # Manual-only export
+        resp = block_client.get("/api/admin/block/export?source=manual", headers=AUTH)
+        assert resp.status_code == 200
+        assert "text/plain" in resp.headers["content-type"]
+        lines = resp.text.strip().split("\n")
+        assert len(lines) == 2
+        assert VALID_TX_ID in lines
+        assert VALID_TX_ID_2 in lines
+        assert "tx_scan" not in lines
+
+    def test_export_all_blocked_tx_ids(self, block_client, block_db):
+        """Export all returns manual + scanner-detected."""
+        block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        block_db.save_verdict("h1", "tx_scan", Verdict.MALICIOUS, '["rule1"]', 0.99, "0.1.0")
+
+        resp = block_client.get("/api/admin/block/export?source=all", headers=AUTH)
+        assert resp.status_code == 200
+        lines = resp.text.strip().split("\n")
+        assert len(lines) == 2
+        assert VALID_TX_ID in lines
+        assert "tx_scan" in lines
+
+    def test_export_empty(self, block_client):
+        """Export with no blocks returns empty."""
+        resp = block_client.get("/api/admin/block/export", headers=AUTH)
+        assert resp.status_code == 200
+        assert resp.text == ""
+
+    def test_export_requires_auth(self, block_client):
+        resp = block_client.get("/api/admin/block/export")
+        assert resp.status_code == 401
