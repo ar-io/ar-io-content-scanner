@@ -510,7 +510,7 @@ def build_admin_router(app_state) -> APIRouter:
             body = await request.json()
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid JSON body")
-        reason = str(body.get("reason", ""))[:500]
+        reason = str(body.get("reason", ""))[:300]
 
         # Accept either a single tx_id or a list of tx_ids
         tx_ids_raw = body.get("tx_ids", [])
