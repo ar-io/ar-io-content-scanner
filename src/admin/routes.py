@@ -706,7 +706,7 @@ def build_admin_router(app_state) -> APIRouter:
         return PlainTextResponse(
             content=text,
             headers={
-                "Content-Disposition": f"attachment; filename=blocked_tx_ids.txt"
+                "Content-Disposition": "attachment; filename=blocked_tx_ids.txt"
             },
         )
 

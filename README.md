@@ -230,6 +230,7 @@ Use the Manual Block tab to immediately block an Arweave transaction by TX ID. T
 | `/api/admin/screenshot/:hash` | GET | Screenshot image (JPEG) for flagged content |
 | `/api/admin/preview/:txid` | GET | Raw HTML source preview |
 | `/api/admin/block` | POST | Manually block a transaction by TX ID |
+| `/api/admin/block/export` | GET | Export blocked TX IDs as plain text (for bootstrapping) |
 | `/api/admin/history` | GET | Paginated scan history |
 | `/api/admin/history/export` | GET | CSV export of scan history |
 | `/api/admin/settings` | GET | Current scanner configuration |
