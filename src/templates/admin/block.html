@@ -1,5 +1,5 @@
 <!-- Manual Block Tab -->
-<div x-data="blockTab" @close-modal.window="if (!loading) confirmDialog.show = false">
+<div x-data="blockTab" x-init="init()" @close-modal.window="if (!loading) confirmDialog.show = false">
   <div class="section-header">
     <h2>Manual Block</h2>
     <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block Arweave transactions by TX ID. Paste one or more TX IDs (one per line). Blocks immediately regardless of scanner mode.</p>
@@ -13,11 +13,11 @@
   </template>
 
   <!-- Block Form -->
-  <div class="card" style="margin-bottom: 24px; padding: 24px;">
-    <div style="margin-bottom: 16px;">
+  <div class="card" style="margin-bottom: 24px;">
+    <div style="margin-bottom: 20px;">
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID(s)</label>
-      <textarea x-model="txInput" :disabled="loading" placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ" rows="4"
-        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.9rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box; resize: vertical;"
+      <textarea x-model="txInput" :disabled="loading" placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ" rows="5"
+        style="width: 100%; padding: 12px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box; resize: vertical; line-height: 1.6;"
         :style="loading ? 'opacity: 0.5; cursor: not-allowed;' : ''"
         @input="validationError = ''"></textarea>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
@@ -28,10 +28,10 @@
         <span style="font-size: 0.75rem; color: var(--color-gray);" x-text="parseTxIds().length === 1 ? '1 TX ID' : parseTxIds().length + ' TX IDs'" x-show="parseTxIds().length > 0"></span>
       </div>
     </div>
-    <div style="margin-bottom: 16px;">
+    <div style="margin-bottom: 20px;">
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Reason (optional)</label>
       <textarea x-model="reason" :disabled="loading" placeholder="Why are these transactions being blocked? (e.g., reported phishing, known scam)" rows="2"
-        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical;"
+        style="width: 100%; padding: 12px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical;"
         :style="loading ? 'opacity: 0.5; cursor: not-allowed;' : ''"></textarea>
     </div>
     <button class="btn btn-danger" @click="promptBlock()" :disabled="parseTxIds().length === 0 || loading">
@@ -39,54 +39,87 @@
     </button>
   </div>
 
-  <!-- Recent manual blocks (session-local) -->
-  <template x-if="recentBlocks.length > 0">
-    <div>
-      <h3 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 12px;">Recent Manual Blocks (this session)</h3>
-      <div class="card" style="padding: 0; overflow-x: auto;">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>TX ID</th>
-              <th>Reason</th>
-              <th>Status</th>
-              <th>Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="b in recentBlocks" :key="b.tx_id + b.time + b.status">
-              <tr :style="b.status === 'invalid' ? 'opacity: 0.5;' : ''">
-                <td>
-                  <template x-if="b.status !== 'invalid' && txUrl(b.tx_id)">
-                    <a :href="txUrl(b.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
-                  </template>
-                  <template x-if="b.status !== 'invalid' && !txUrl(b.tx_id)">
-                    <span class="mono" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id"></span>
-                  </template>
-                  <template x-if="b.status === 'invalid'">
-                    <span class="mono" style="color: var(--color-gray);" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id"></span>
-                  </template>
-                  <template x-if="b.status !== 'invalid'">
-                    <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(b.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
-                      <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                      <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    </button>
-                  </template>
-                </td>
-                <td><span x-text="b.reason || '\u2014'" style="font-size: 0.85rem;"></span></td>
-                <td>
-                  <span x-show="b.status === 'blocked'" style="color: var(--color-green); font-weight: 600;">Blocked</span>
-                  <span x-show="b.status === 'gateway_failed'" style="color: var(--color-amber); font-weight: 600;" title="Verdict saved in DB but gateway block call failed">Saved (gateway failed)</span>
-                  <span x-show="b.status === 'invalid'" style="color: var(--color-red); font-weight: 600;">Skipped (invalid)</span>
-                </td>
-                <td style="white-space: nowrap; font-size: 0.85rem;" x-text="b.time"></td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
+  <!-- Manual Blocks History (from DB) -->
+  <div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;">Manual Blocks</h3>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 0.8rem; color: var(--color-gray);" x-text="historyTotal + ' total'"></span>
+        <button class="btn btn-sm btn-outline" @click="loadHistory()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       </div>
     </div>
-  </template>
+
+    <div x-show="historyLoading" class="text-center" style="padding: 40px;">
+      <div class="spinner" style="width: 24px; height: 24px;"></div>
+    </div>
+
+    <template x-if="!historyLoading && historyItems.length === 0">
+      <div class="card empty-state">
+        <div class="empty-state-icon">&#128274;</div>
+        <p class="empty-state-title">No manual blocks yet</p>
+        <p class="empty-state-text">Transactions you block above will appear here.</p>
+      </div>
+    </template>
+
+    <div x-show="!historyLoading && historyItems.length > 0" class="card" style="padding: 0; overflow-x: auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Blocked At</th>
+            <th>TX ID</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="item in historyItems" :key="item.content_hash">
+            <tr>
+              <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
+              <td>
+                <template x-if="txUrl(item.tx_id)">
+                  <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
+                </template>
+                <template x-if="!txUrl(item.tx_id)">
+                  <span class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id"></span>
+                </template>
+                <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+                  <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </td>
+              <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <span x-text="item.admin_notes || '\u2014'" :title="item.admin_notes" style="font-size: 0.85rem;"></span>
+              </td>
+              <td>
+                <template x-if="item.admin_status === 'confirmed_malicious'">
+                  <span style="color: var(--color-red); font-weight: 600; font-size: 0.8rem;">Blocked</span>
+                </template>
+                <template x-if="item.admin_status === 'confirmed_clean'">
+                  <span style="color: var(--color-green); font-weight: 600; font-size: 0.8rem;">Reverted</span>
+                </template>
+                <template x-if="!item.admin_status">
+                  <span style="color: var(--color-gray); font-size: 0.8rem;">Reverted</span>
+                </template>
+              </td>
+              <td>
+                <button class="copy-btn" style="opacity: 0.6; font-size: 0.7rem;" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', item.content_hash)" title="Open in Review Queue">review &rarr;</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" x-show="!historyLoading && historyPages > 1">
+      <button class="btn btn-sm btn-outline" @click="setHistoryPage(historyPage - 1)" :disabled="historyPage <= 1">Prev</button>
+      <span style="font-size: 0.85rem; color: var(--color-gray);">
+        Page <span x-text="historyPage"></span> of <span x-text="historyPages"></span>
+      </span>
+      <button class="btn btn-sm btn-outline" @click="setHistoryPage(historyPage + 1)" :disabled="historyPage >= historyPages">Next</button>
+    </div>
+  </div>
 
   <!-- Confirmation Dialog -->
   <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="if (!loading) confirmDialog.show = false" x-transition>

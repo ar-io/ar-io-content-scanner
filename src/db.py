@@ -539,7 +539,7 @@ class ScannerDB:
         rows = self.conn.execute(
             f"SELECT v.content_hash, v.tx_id, v.verdict, v.matched_rules, "
             f"v.ml_score, v.scanned_at, v.scanner_version, "
-            f"o.admin_verdict, v.source "
+            f"o.admin_verdict, v.source, o.notes "
             f"FROM scan_verdicts v "
             f"LEFT JOIN admin_overrides o ON v.content_hash = o.content_hash "
             f"{where} "
@@ -558,6 +558,7 @@ class ScannerDB:
                 "scanner_version": r[6],
                 "admin_status": r[7],
                 "source": r[8],
+                "admin_notes": r[9],
             }
             for r in rows
         ]

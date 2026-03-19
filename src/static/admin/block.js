@@ -10,13 +10,47 @@ document.addEventListener('alpine:init', function () {
       loading: false,
       error: '',
       validationError: '',
-      recentBlocks: [],
+
+      // History from DB
+      historyItems: [],
+      historyTotal: 0,
+      historyPage: 1,
+      historyPages: 1,
+      historyLoading: false,
 
       confirmDialog: {
         show: false,
         txIds: [],
         reason: '',
         progressText: ''
+      },
+
+      async init() {
+        await this.loadHistory();
+      },
+
+      async loadHistory() {
+        this.historyLoading = true;
+        try {
+          var params = new URLSearchParams({
+            source: 'manual',
+            sort: 'newest',
+            page: this.historyPage,
+            per_page: 25
+          });
+          var data = await apiJson('/api/admin/history?' + params);
+          this.historyItems = data.items;
+          this.historyTotal = data.total;
+          this.historyPages = data.pages;
+        } catch (e) {
+          // Silently fail — the form still works
+        }
+        this.historyLoading = false;
+      },
+
+      async setHistoryPage(n) {
+        this.historyPage = Math.max(1, Math.min(n, this.historyPages));
+        await this.loadHistory();
       },
 
       parseTxIds() {
@@ -97,26 +131,22 @@ document.addEventListener('alpine:init', function () {
           var result = await resp.json();
           dialog.show = false;
 
-          var now = new Date().toLocaleString();
           if (isSingle) {
-            this.recentBlocks.unshift({
-              tx_id: result.tx_id,
-              reason: dialog.reason,
-              blocked: result.blocked,
-              status: result.blocked ? 'blocked' : 'gateway_failed',
-              time: now
-            });
             var msg = result.blocked
               ? 'Transaction blocked successfully'
               : 'Verdict saved but gateway block failed';
             if (result.already_existed) msg += ' (overwrote existing verdict)';
             Alpine.store('toast').show(msg, result.blocked ? 'success' : 'error');
           } else {
-            this._handleBulkResult(result, dialog.reason, now);
+            this._showBulkToast(result);
           }
 
           this.txInput = '';
           this.reason = '';
+
+          // Refresh the history table to show the new blocks
+          this.historyPage = 1;
+          await this.loadHistory();
         } catch (e) {
           dialog.show = false;
           this.error = e.message || 'Failed to block transactions';
@@ -125,41 +155,12 @@ document.addEventListener('alpine:init', function () {
         this.loading = false;
       },
 
-      _handleBulkResult(result, reason, now) {
-        var self = this;
-
-        // Add successful items to recent blocks
-        if (result.results && result.results.length > 0) {
-          result.results.forEach(function (r) {
-            self.recentBlocks.unshift({
-              tx_id: r.tx_id,
-              reason: reason,
-              blocked: r.blocked,
-              status: r.blocked ? 'blocked' : 'gateway_failed',
-              time: now
-            });
-          });
-        }
-
-        // Add validation-rejected items to recent blocks
-        if (result.errors && result.errors.length > 0) {
-          result.errors.forEach(function (e) {
-            self.recentBlocks.unshift({
-              tx_id: e.tx_id || '(invalid)',
-              reason: reason,
-              blocked: false,
-              status: 'invalid',
-              time: now
-            });
-          });
-        }
-
-        // Build a clear summary toast
-        var totalAttempted = result.succeeded + result.failed;
+      _showBulkToast(result) {
         var blockedCount = result.results
           ? result.results.filter(function (r) { return r.blocked; }).length
           : 0;
         var gatewayFailed = result.succeeded - blockedCount;
+        var totalAttempted = result.succeeded + result.failed;
         var parts = [];
 
         if (blockedCount > 0) parts.push(blockedCount + ' blocked');
@@ -167,7 +168,6 @@ document.addEventListener('alpine:init', function () {
         if (result.failed > 0) parts.push(result.failed + ' skipped (invalid)');
 
         var msg = parts.join(', ');
-        // Capitalize first letter
         msg = msg.charAt(0).toUpperCase() + msg.slice(1);
         msg += ' \u2014 ' + totalAttempted + ' total';
 

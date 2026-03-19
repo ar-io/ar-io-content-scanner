@@ -666,7 +666,7 @@ def build_admin_router(app_state) -> APIRouter:
             fieldnames=[
                 "content_hash", "tx_id", "verdict", "matched_rules",
                 "ml_score", "scanned_at", "scanner_version", "admin_status",
-                "source",
+                "source", "admin_notes",
             ],
         )
         writer.writeheader()
