@@ -15,7 +15,8 @@ document.addEventListener('alpine:init', function () {
       confirmDialog: {
         show: false,
         txIds: [],
-        reason: ''
+        reason: '',
+        progressText: ''
       },
 
       parseTxIds() {
@@ -64,7 +65,8 @@ document.addEventListener('alpine:init', function () {
         this.confirmDialog = {
           show: true,
           txIds: ids,
-          reason: this.reason.trim()
+          reason: this.reason.trim(),
+          progressText: ''
         };
       },
 
@@ -72,8 +74,13 @@ document.addEventListener('alpine:init', function () {
         this.loading = true;
         this.error = '';
         var dialog = this.confirmDialog;
+        var isSingle = dialog.txIds.length === 1;
+
+        if (!isSingle) {
+          dialog.progressText = 'Processing ' + dialog.txIds.length + ' transactions...';
+        }
+
         try {
-          var isSingle = dialog.txIds.length === 1;
           var payload = isSingle
             ? { tx_id: dialog.txIds[0], reason: dialog.reason }
             : { tx_ids: dialog.txIds, reason: dialog.reason };
@@ -96,6 +103,7 @@ document.addEventListener('alpine:init', function () {
               tx_id: result.tx_id,
               reason: dialog.reason,
               blocked: result.blocked,
+              status: result.blocked ? 'blocked' : 'gateway_failed',
               time: now
             });
             var msg = result.blocked
@@ -104,29 +112,67 @@ document.addEventListener('alpine:init', function () {
             if (result.already_existed) msg += ' (overwrote existing verdict)';
             Alpine.store('toast').show(msg, result.blocked ? 'success' : 'error');
           } else {
-            var self = this;
-            result.results.forEach(function (r) {
-              self.recentBlocks.unshift({
-                tx_id: r.tx_id,
-                reason: dialog.reason,
-                blocked: r.blocked,
-                time: now
-              });
-            });
-            var blockedCount = result.results.filter(function (r) { return r.blocked; }).length;
-            var totalCount = result.succeeded + result.failed;
-            var msg = blockedCount + ' of ' + totalCount + ' transactions blocked';
-            if (result.failed > 0) msg += ' (' + result.failed + ' invalid)';
-            Alpine.store('toast').show(msg, blockedCount > 0 ? 'success' : 'error');
+            this._handleBulkResult(result, dialog.reason, now);
           }
 
           this.txInput = '';
           this.reason = '';
         } catch (e) {
+          dialog.show = false;
           this.error = e.message || 'Failed to block transactions';
           Alpine.store('toast').show('Block failed: ' + (e.message || 'Unknown error'), 'error');
         }
         this.loading = false;
+      },
+
+      _handleBulkResult(result, reason, now) {
+        var self = this;
+
+        // Add successful items to recent blocks
+        if (result.results && result.results.length > 0) {
+          result.results.forEach(function (r) {
+            self.recentBlocks.unshift({
+              tx_id: r.tx_id,
+              reason: reason,
+              blocked: r.blocked,
+              status: r.blocked ? 'blocked' : 'gateway_failed',
+              time: now
+            });
+          });
+        }
+
+        // Add validation-rejected items to recent blocks
+        if (result.errors && result.errors.length > 0) {
+          result.errors.forEach(function (e) {
+            self.recentBlocks.unshift({
+              tx_id: e.tx_id || '(invalid)',
+              reason: reason,
+              blocked: false,
+              status: 'invalid',
+              time: now
+            });
+          });
+        }
+
+        // Build a clear summary toast
+        var totalAttempted = result.succeeded + result.failed;
+        var blockedCount = result.results
+          ? result.results.filter(function (r) { return r.blocked; }).length
+          : 0;
+        var gatewayFailed = result.succeeded - blockedCount;
+        var parts = [];
+
+        if (blockedCount > 0) parts.push(blockedCount + ' blocked');
+        if (gatewayFailed > 0) parts.push(gatewayFailed + ' saved (gateway failed)');
+        if (result.failed > 0) parts.push(result.failed + ' skipped (invalid)');
+
+        var msg = parts.join(', ');
+        // Capitalize first letter
+        msg = msg.charAt(0).toUpperCase() + msg.slice(1);
+        msg += ' \u2014 ' + totalAttempted + ' total';
+
+        var type = blockedCount === totalAttempted ? 'success' : (blockedCount > 0 ? 'success' : 'error');
+        Alpine.store('toast').show(msg, type);
       }
     };
   });

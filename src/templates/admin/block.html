@@ -1,5 +1,5 @@
 <!-- Manual Block Tab -->
-<div x-data="blockTab" @close-modal.window="confirmDialog.show = false">
+<div x-data="blockTab" @close-modal.window="if (!loading) confirmDialog.show = false">
   <div class="section-header">
     <h2>Manual Block</h2>
     <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block Arweave transactions by TX ID. Paste one or more TX IDs (one per line). Blocks immediately regardless of scanner mode.</p>
@@ -16,8 +16,9 @@
   <div class="card" style="margin-bottom: 24px; padding: 24px;">
     <div style="margin-bottom: 16px;">
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID(s)</label>
-      <textarea x-model="txInput" placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ" rows="4"
+      <textarea x-model="txInput" :disabled="loading" placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ" rows="4"
         style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.9rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box; resize: vertical;"
+        :style="loading ? 'opacity: 0.5; cursor: not-allowed;' : ''"
         @input="validationError = ''"></textarea>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
         <template x-if="validationError">
@@ -29,8 +30,9 @@
     </div>
     <div style="margin-bottom: 16px;">
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Reason (optional)</label>
-      <textarea x-model="reason" placeholder="Why are these transactions being blocked? (e.g., reported phishing, known scam)" rows="2"
-        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical;"></textarea>
+      <textarea x-model="reason" :disabled="loading" placeholder="Why are these transactions being blocked? (e.g., reported phishing, known scam)" rows="2"
+        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical;"
+        :style="loading ? 'opacity: 0.5; cursor: not-allowed;' : ''"></textarea>
     </div>
     <button class="btn btn-danger" @click="promptBlock()" :disabled="parseTxIds().length === 0 || loading">
       <span x-text="parseTxIds().length <= 1 ? 'Block Transaction' : 'Block ' + parseTxIds().length + ' Transactions'"></span>
@@ -47,29 +49,35 @@
             <tr>
               <th>TX ID</th>
               <th>Reason</th>
-              <th>Gateway Blocked</th>
+              <th>Status</th>
               <th>Time</th>
             </tr>
           </thead>
           <tbody>
-            <template x-for="b in recentBlocks" :key="b.tx_id + b.time">
-              <tr>
+            <template x-for="b in recentBlocks" :key="b.tx_id + b.time + b.status">
+              <tr :style="b.status === 'invalid' ? 'opacity: 0.5;' : ''">
                 <td>
-                  <template x-if="txUrl(b.tx_id)">
+                  <template x-if="b.status !== 'invalid' && txUrl(b.tx_id)">
                     <a :href="txUrl(b.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
                   </template>
-                  <template x-if="!txUrl(b.tx_id)">
+                  <template x-if="b.status !== 'invalid' && !txUrl(b.tx_id)">
                     <span class="mono" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id"></span>
                   </template>
-                  <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(b.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
-                    <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                    <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  </button>
+                  <template x-if="b.status === 'invalid'">
+                    <span class="mono" style="color: var(--color-gray);" x-text="truncateId(b.tx_id, 16)" :title="b.tx_id"></span>
+                  </template>
+                  <template x-if="b.status !== 'invalid'">
+                    <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(b.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+                      <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                      <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </button>
+                  </template>
                 </td>
                 <td><span x-text="b.reason || '\u2014'" style="font-size: 0.85rem;"></span></td>
                 <td>
-                  <span x-show="b.blocked" style="color: var(--color-green); font-weight: 600;">Yes</span>
-                  <span x-show="!b.blocked" style="color: var(--color-red); font-weight: 600;">Failed</span>
+                  <span x-show="b.status === 'blocked'" style="color: var(--color-green); font-weight: 600;">Blocked</span>
+                  <span x-show="b.status === 'gateway_failed'" style="color: var(--color-amber); font-weight: 600;" title="Verdict saved in DB but gateway block call failed">Saved (gateway failed)</span>
+                  <span x-show="b.status === 'invalid'" style="color: var(--color-red); font-weight: 600;">Skipped (invalid)</span>
                 </td>
                 <td style="white-space: nowrap; font-size: 0.85rem;" x-text="b.time"></td>
               </tr>
@@ -81,7 +89,7 @@
   </template>
 
   <!-- Confirmation Dialog -->
-  <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="confirmDialog.show = false" x-transition>
+  <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="if (!loading) confirmDialog.show = false" x-transition>
     <div class="confirm-dialog">
       <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">
         <span x-text="confirmDialog.txIds.length === 1 ? 'Block Transaction' : 'Block ' + confirmDialog.txIds.length + ' Transactions'"></span>
@@ -103,8 +111,11 @@
           <span x-text="confirmDialog.reason"></span>
         </div>
       </template>
-      <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
-        <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false">Cancel</button>
+      <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; align-items: center;">
+        <template x-if="loading && confirmDialog.progressText">
+          <span style="font-size: 0.8rem; color: var(--color-gray); margin-right: auto;" x-text="confirmDialog.progressText"></span>
+        </template>
+        <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false" :disabled="loading">Cancel</button>
         <button class="btn btn-danger btn-sm" @click="executeBlock()" :disabled="loading">
           <span x-show="!loading" x-text="confirmDialog.txIds.length === 1 ? 'Block Transaction' : 'Block ' + confirmDialog.txIds.length + ' Transactions'"></span>
           <span x-show="loading" class="spinner"></span>

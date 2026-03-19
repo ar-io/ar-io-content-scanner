@@ -823,6 +823,39 @@ class TestManualBlock:
         )
         assert resp.status_code == 400
 
+    def test_bulk_block_gateway_partial_failure(self, block_client, block_db, block_app):
+        """Some gateway calls succeed, some fail — all get verdicts but blocked differs."""
+        call_count = [0]
+        original_block = block_app.state.gateway.block_data
+
+        async def flaky_block(*args, **kwargs):
+            call_count[0] += 1
+            # Fail the second call
+            if call_count[0] == 2:
+                return False
+            return True
+
+        block_app.state.gateway.block_data = AsyncMock(side_effect=flaky_block)
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": [VALID_TX_ID, VALID_TX_ID_2, VALID_TX_ID_3]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["succeeded"] == 3  # all valid
+        assert data["failed"] == 0  # no validation errors
+
+        blocked = [r for r in data["results"] if r["blocked"]]
+        not_blocked = [r for r in data["results"] if not r["blocked"]]
+        assert len(blocked) == 2
+        assert len(not_blocked) == 1
+        assert not_blocked[0]["tx_id"] == VALID_TX_ID_2
+
+        # All 3 should have verdicts in DB
+        for tx_id in [VALID_TX_ID, VALID_TX_ID_2, VALID_TX_ID_3]:
+            assert block_db.get_verdict(tx_id) is not None
+
     def test_single_tx_id_backward_compatible(self, block_client):
         """Single tx_id field should return flat response, not results array."""
         resp = block_client.post(
