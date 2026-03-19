@@ -522,6 +522,8 @@ class TestEnforceModeActions:
 
 # A valid 43-char base64url TX ID for manual block tests
 VALID_TX_ID = "xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ"
+VALID_TX_ID_2 = "qytMJ3rovY58DZqa3HOZKodMUgFAB0DpE_Xo2Vayr_k"
+VALID_TX_ID_3 = "xoOnlCfoEJEXy7R6mhUpmqWiJ_f7aIB1PtPFQ1VKv4w"
 
 
 class TestManualBlock:
@@ -768,3 +770,71 @@ class TestManualBlock:
         data = resp.json()
         assert data["total"] == 1
         assert data["items"][0]["source"] == "manual"
+
+    def test_bulk_block_multiple_tx_ids(self, block_client, block_db, block_app):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": [VALID_TX_ID, VALID_TX_ID_2, VALID_TX_ID_3], "reason": "batch"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["succeeded"] == 3
+        assert data["failed"] == 0
+        assert len(data["results"]) == 3
+        assert all(r["blocked"] for r in data["results"])
+
+        # All should have verdicts
+        for tx_id in [VALID_TX_ID, VALID_TX_ID_2, VALID_TX_ID_3]:
+            v = block_db.get_verdict(tx_id)
+            assert v is not None
+            assert v.verdict == Verdict.MALICIOUS
+            assert v.source == "manual"
+
+        # Gateway should have been called 3 times
+        assert block_app.state.gateway.block_data.call_count == 3
+
+    def test_bulk_block_with_invalid_ids(self, block_client, block_db):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": [VALID_TX_ID, "bad!", VALID_TX_ID_2]},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["succeeded"] == 2
+        assert data["failed"] == 1
+        assert data["errors"][0]["error"] == "Invalid TX ID"
+
+    def test_bulk_block_empty_list(self, block_client):
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": []},
+        )
+        assert resp.status_code == 400
+
+    def test_bulk_block_exceeds_limit(self, block_client):
+        ids = [f"{'a' * 43}" for _ in range(101)]
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": ids},
+        )
+        assert resp.status_code == 400
+
+    def test_single_tx_id_backward_compatible(self, block_client):
+        """Single tx_id field should return flat response, not results array."""
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": VALID_TX_ID},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Flat response with tx_id, blocked, already_existed
+        assert "tx_id" in data
+        assert "blocked" in data
+        assert "already_existed" in data
+        # Should NOT have results array
+        assert "results" not in data

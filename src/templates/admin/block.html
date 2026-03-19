@@ -2,7 +2,7 @@
 <div x-data="blockTab" @close-modal.window="confirmDialog.show = false">
   <div class="section-header">
     <h2>Manual Block</h2>
-    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block an Arweave transaction by TX ID. This bypasses scanner detection and blocks immediately regardless of scanner mode.</p>
+    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block Arweave transactions by TX ID. Paste one or more TX IDs (one per line). Blocks immediately regardless of scanner mode.</p>
   </div>
 
   <template x-if="error">
@@ -15,25 +15,25 @@
   <!-- Block Form -->
   <div class="card" style="margin-bottom: 24px; padding: 24px;">
     <div style="margin-bottom: 16px;">
-      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID</label>
-      <input type="text" x-model="txId" placeholder="e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ"
-        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.9rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box;"
-        @input="validationError = ''" @keyup.enter="promptBlock()">
+      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID(s)</label>
+      <textarea x-model="txInput" placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ" rows="4"
+        style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.9rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box; resize: vertical;"
+        @input="validationError = ''"></textarea>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
         <template x-if="validationError">
           <p style="color: var(--color-red); font-size: 0.8rem; margin: 0;" x-text="validationError"></p>
         </template>
         <template x-if="!validationError"><span></span></template>
-        <span style="font-size: 0.75rem; color: var(--color-gray);" :style="txId.trim().length === 43 ? 'color: var(--color-green)' : ''" x-text="txId.trim().length + '/43'"></span>
+        <span style="font-size: 0.75rem; color: var(--color-gray);" x-text="parseTxIds().length === 1 ? '1 TX ID' : parseTxIds().length + ' TX IDs'" x-show="parseTxIds().length > 0"></span>
       </div>
     </div>
     <div style="margin-bottom: 16px;">
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Reason (optional)</label>
-      <textarea x-model="reason" placeholder="Why is this transaction being blocked? (e.g., reported phishing, known scam)" rows="3"
+      <textarea x-model="reason" placeholder="Why are these transactions being blocked? (e.g., reported phishing, known scam)" rows="2"
         style="width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical;"></textarea>
     </div>
-    <button class="btn btn-danger" @click="promptBlock()" :disabled="!txId.trim() || loading">
-      Block Transaction
+    <button class="btn btn-danger" @click="promptBlock()" :disabled="parseTxIds().length === 0 || loading">
+      <span x-text="parseTxIds().length <= 1 ? 'Block Transaction' : 'Block ' + parseTxIds().length + ' Transactions'"></span>
     </button>
   </div>
 
@@ -83,13 +83,19 @@
   <!-- Confirmation Dialog -->
   <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="confirmDialog.show = false" x-transition>
     <div class="confirm-dialog">
-      <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">Block Transaction</h3>
+      <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">
+        <span x-text="confirmDialog.txIds.length === 1 ? 'Block Transaction' : 'Block ' + confirmDialog.txIds.length + ' Transactions'"></span>
+      </h3>
       <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 16px; line-height: 1.5;">
-        This will immediately block the transaction on the gateway. The block applies regardless of scanner mode (dry-run or enforce). You can revert this from the Review Queue later.
+        <span x-show="confirmDialog.txIds.length === 1">This will immediately block the transaction on the gateway.</span>
+        <span x-show="confirmDialog.txIds.length > 1" x-text="'This will immediately block ' + confirmDialog.txIds.length + ' transactions on the gateway.'"></span>
+        The block applies regardless of scanner mode (dry-run or enforce). You can revert blocks from the Review Queue later.
       </p>
-      <div style="margin-bottom: 12px; font-size: 0.85rem;">
-        <span style="color: var(--color-gray);">TX ID: </span>
-        <span class="mono" x-text="confirmDialog.txId" style="word-break: break-all;"></span>
+      <div style="margin-bottom: 12px; font-size: 0.85rem; max-height: 200px; overflow-y: auto;">
+        <span style="color: var(--color-gray);" x-text="confirmDialog.txIds.length === 1 ? 'TX ID:' : 'TX IDs:'"></span>
+        <template x-for="id in confirmDialog.txIds" :key="id">
+          <div class="mono" style="margin-top: 4px; word-break: break-all; font-size: 0.8rem;" x-text="id"></div>
+        </template>
       </div>
       <template x-if="confirmDialog.reason">
         <div style="margin-bottom: 12px; font-size: 0.85rem;">
@@ -100,7 +106,7 @@
       <div style="display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end;">
         <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false">Cancel</button>
         <button class="btn btn-danger btn-sm" @click="executeBlock()" :disabled="loading">
-          <span x-show="!loading">Block Transaction</span>
+          <span x-show="!loading" x-text="confirmDialog.txIds.length === 1 ? 'Block Transaction' : 'Block ' + confirmDialog.txIds.length + ' Transactions'"></span>
           <span x-show="loading" class="spinner"></span>
         </button>
       </div>
