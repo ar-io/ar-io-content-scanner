@@ -18,7 +18,7 @@
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID(s)</label>
       <textarea x-model="txInput" :disabled="loading" placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ"
         style="display: block; width: 100%; height: 160px; padding: 12px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: 'JetBrains Mono', monospace; box-sizing: border-box; resize: none !important; line-height: 1.6; overflow-y: auto; background: var(--color-white);"
-        :style="loading ? 'opacity: 0.5; cursor: not-allowed;' : ''"
+        :style="loading &amp;&amp; { opacity: 0.5, cursor: 'not-allowed' }"
         @input="validationError = ''"></textarea>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; min-height: 20px;">
         <span x-show="validationError" style="color: var(--color-red); font-size: 0.8rem;" x-text="validationError"></span>
@@ -30,7 +30,7 @@
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Reason (optional)</label>
       <input type="text" x-model="reason" :disabled="loading" maxlength="300" placeholder="e.g. reported phishing, known scam"
         style="display: block; width: 100%; padding: 10px 14px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; background: var(--color-white);"
-        :style="loading ? 'opacity: 0.5; cursor: not-allowed;' : ''">
+        :style="loading &amp;&amp; { opacity: 0.5, cursor: 'not-allowed' }">
     </div>
     <button class="btn btn-danger" @click="promptBlock()" :disabled="parseTxIds().length === 0 || loading">
       <span x-text="parseTxIds().length <= 1 ? 'Block Transaction' : 'Block ' + parseTxIds().length + ' Transactions'"></span>
