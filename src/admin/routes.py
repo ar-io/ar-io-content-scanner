@@ -37,9 +37,9 @@ def build_admin_router(app_state) -> APIRouter:
     @router.get("/admin", response_class=HTMLResponse)
     async def admin_page(request: Request):
         return templates.TemplateResponse(
+            request,
             "admin/base.html",
-            {
-                "request": request,
+            context={
                 "gateway_public_url": settings.gateway_public_url,
             },
         )
