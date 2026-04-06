@@ -1,5 +1,6 @@
 """Tests for the Scanner orchestrator."""
 
+import base64
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock
@@ -142,6 +143,111 @@ class TestWebhookProcessing:
         )
         await scanner.process_webhook(payload)
         scanner.gateway.block_data.assert_called_once()
+
+
+def _b64url_tag(name: str, value: str) -> dict:
+    """Create a base64url-encoded Arweave tag."""
+    return {
+        "name": base64.urlsafe_b64encode(name.encode()).decode().rstrip("="),
+        "value": base64.urlsafe_b64encode(value.encode()).decode().rstrip("="),
+    }
+
+
+class TestIndexedEventProcessing:
+    @pytest.mark.asyncio
+    async def test_tx_indexed_enqueues(self, scanner, db):
+        payload = WebhookPayload.model_validate({
+            "event": "tx-indexed",
+            "data": {
+                "id": TX1,
+                "data_size": "1024",
+                "data_root": "some-merkle-root",
+                "tags": [_b64url_tag("Content-Type", "text/html")],
+            },
+        })
+        await scanner.process_webhook(payload)
+        assert db.queue_depth() == 1
+
+    @pytest.mark.asyncio
+    async def test_ans104_data_item_indexed_enqueues(self, scanner, db):
+        payload = WebhookPayload.model_validate({
+            "event": "ans104-data-item-indexed",
+            "data": {
+                "id": TX1,
+                "data_hash": "hash123",
+                "data_size": 2048,
+                "content_type": "text/html",
+            },
+        })
+        await scanner.process_webhook(payload)
+        assert db.queue_depth() == 1
+
+    @pytest.mark.asyncio
+    async def test_tx_indexed_no_content_type_enqueues(self, scanner, db):
+        """tx-indexed without Content-Type tag has unknown type, still enqueued."""
+        payload = WebhookPayload.model_validate({
+            "event": "tx-indexed",
+            "data": {
+                "id": TX1,
+                "data_size": "512",
+                "tags": [_b64url_tag("App-Name", "MyApp")],
+            },
+        })
+        await scanner.process_webhook(payload)
+        assert db.queue_depth() == 1
+
+    @pytest.mark.asyncio
+    async def test_ans104_cache_hit_skips_enqueue(self, scanner, db):
+        db.save_verdict("hash123", "old-tx", Verdict.CLEAN, "[]", None, "0.1.0")
+        payload = WebhookPayload.model_validate({
+            "event": "ans104-data-item-indexed",
+            "data": {
+                "id": TX2,
+                "data_hash": "hash123",
+                "data_size": 1024,
+                "content_type": "text/html",
+            },
+        })
+        await scanner.process_webhook(payload)
+        assert db.queue_depth() == 0
+
+    @pytest.mark.asyncio
+    async def test_disabled_event_skipped(self, db):
+        """Events not in webhook_events are skipped."""
+        settings = Settings(
+            gateway_url="http://localhost:3000",
+            admin_api_key="test-key",
+            scanner_mode="enforce",
+            webhook_events=frozenset({"data-cached"}),
+        )
+        gateway = AsyncMock(spec=GatewayClient)
+        engine = RuleEngine(settings, classifier=None)
+        metrics = ScanMetrics()
+        s = Scanner(settings, db, gateway, engine, metrics)
+        payload = WebhookPayload.model_validate({
+            "event": "tx-indexed",
+            "data": {
+                "id": TX1,
+                "data_size": "1024",
+                "tags": [_b64url_tag("Content-Type", "text/html")],
+            },
+        })
+        await s.process_webhook(payload)
+        assert db.queue_depth() == 0
+
+    @pytest.mark.asyncio
+    async def test_tx_indexed_non_html_skipped(self, scanner, db):
+        """tx-indexed with non-HTML content type is skipped."""
+        payload = WebhookPayload.model_validate({
+            "event": "tx-indexed",
+            "data": {
+                "id": TX1,
+                "data_size": "1024",
+                "tags": [_b64url_tag("Content-Type", "image/png")],
+            },
+        })
+        await scanner.process_webhook(payload)
+        assert db.queue_depth() == 0
 
 
 class TestQueueProcessing:

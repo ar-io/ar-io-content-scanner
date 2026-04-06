@@ -12,7 +12,9 @@ A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io
     │                        │                                         │
     │                   Cache write ──> Serve content (no delay)       │
     │                        │                                         │
-    │                   DATA_CACHED webhook                            │
+    │                   Webhook events                                  │
+    │              (data-cached / tx-indexed /                          │
+    │               ans104-data-item-indexed)                           │
     └────────────────────────┼─────────────────────────────────────────┘
                              │
                              ▼
@@ -59,7 +61,9 @@ A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io
     └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Tradeoff:** The first user to access malicious content sees it. All subsequent requests are blocked. This is acceptable because phishing pages need repeat victims, and blocking after first access eliminates the attack surface.
+**On-access scanning** (`data-cached`): The first user to access malicious content sees it. All subsequent requests are blocked.
+
+**Index-time scanning** (`tx-indexed`, `ans104-data-item-indexed`): Content is scanned when indexed by the gateway, before any user accesses it. Requires `WEBHOOK_INDEX_FILTER` on the gateway. Note: for `tx-indexed` events, the content hash is unavailable (only a merkle root), so verdicts are not cached until the content is accessed and a `data-cached` event provides the real hash.
 
 ## Quick Start
 
@@ -72,13 +76,19 @@ WEBHOOK_TARGET_SERVERS=http://content-scanner:3100/scan
 WEBHOOK_EMIT_DATA_CACHED_EVENTS=true
 ```
 
+For index-time scanning (recommended — catches content before first access):
+
+```bash
+WEBHOOK_INDEX_FILTER={"always": true}
+```
+
 If your gateway has `ENABLE_RATE_LIMITER=true`, allowlist the Docker network:
 
 ```bash
 RATE_LIMITER_IPS_AND_CIDRS_ALLOWLIST=172.17.0.0/16
 ```
 
-Requires ar-io-node with the `DATA_CACHED` webhook event support.
+Requires ar-io-node with webhook event support.
 
 ### 2. Run the Scanner
 
@@ -154,6 +164,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `ADMIN_API_KEY` | Yes | -- | Must match the gateway's `ADMIN_API_KEY` |
 | `SCANNER_ADMIN_KEY` | Yes | -- | Secret key for the admin dashboard (separate from gateway key) |
 | `SCANNER_MODE` | No | `dry-run` | `dry-run` (log only) or `enforce` (auto-block) |
+| `WEBHOOK_EVENTS` | No | `data-cached,tx-indexed,ans104-data-item-indexed` | Comma-separated webhook events to process |
 | `SCANNER_PORT` | No | `3100` | HTTP server port |
 | `SCANNER_WORKERS` | No | `2` | Number of concurrent scan workers |
 | `ML_MODEL_ENABLED` | No | `true` | Enable XGBoost ML scoring |
@@ -217,7 +228,7 @@ Use the Manual Block tab to immediately block an Arweave transaction by TX ID. T
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/scan` | POST | Receives `DATA_CACHED` webhook events (returns 202) |
+| `/scan` | POST | Receives gateway webhook events (`data-cached`, `tx-indexed`, `ans104-data-item-indexed`) (returns 202) |
 | `/health` | GET | Health check (mode, version) |
 | `/metrics` | GET | Scan statistics JSON (verdicts, cache hits, blocks, queue depth) |
 | `/metrics/prometheus` | GET | Prometheus-formatted metrics (text/plain) |

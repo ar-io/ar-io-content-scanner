@@ -7,7 +7,7 @@
   "id": "ar-io-content-scanner",
   "name": "Ar.io Content Scanner",
   "description": "Auto-detects and blocks phishing HTML on your gateway using rule-based + ML analysis",
-  "longDescription": "Content Scanner is a content moderation sidecar that receives DATA_CACHED webhook events, scans HTML for phishing patterns using 4 conjunctive detection rules and an XGBoost ML model, and auto-blocks malicious content via the gateway admin API. It includes a full admin dashboard for reviewing detections, managing overrides, and exporting training data. Designed for precision over recall — every rule requires 2+ independent signals to avoid false positives.",
+  "longDescription": "Content Scanner is a content moderation sidecar that receives gateway webhook events (data-cached, tx-indexed, ans104-data-item-indexed), scans HTML for phishing patterns using 4 conjunctive detection rules and an XGBoost ML model, and auto-blocks malicious content via the gateway admin API. Supports both on-access and index-time scanning. It includes a full admin dashboard for reviewing detections, managing overrides, and exporting training data. Designed for precision over recall — every rule requires 2+ independent signals to avoid false positives.",
   "author": "Ar.io Labs",
   "authorUrl": "https://ar.io",
   "url": "https://github.com/ar-io/ar-io-content-scanner",
@@ -39,7 +39,7 @@
 - **version**: `0.1.0` — current version from `config.py`
 - **imageUri**: GHCR image published by CI on push to main
 - **lastUpdated**: Today's date
-- **minGatewayVersion**: `r72` — requires gateway with `DATA_CACHED` webhook support
+- **minGatewayVersion**: `r72` — requires gateway with webhook support (`data-cached`, `tx-indexed`, `ans104-data-item-indexed`)
 - **documentation**: Links to README
 - **logo**: SVG logo hosted in the repo's `assets/` directory
 - **screenshots**: Dashboard screenshot hosted on Arweave (`dqpdSV07YUR-3K4tScOzGULqnvbx6OHaca00X6x_ZKY`)
@@ -52,6 +52,8 @@
    ```bash
    WEBHOOK_TARGET_SERVERS=http://content-scanner:3100/scan
    WEBHOOK_EMIT_DATA_CACHED_EVENTS=true
+   # Optional: enable index-time scanning
+   # WEBHOOK_INDEX_FILTER={"always": true}
    ```
 
 2. Clone the content scanner repo and configure:
@@ -75,7 +77,7 @@
 
 1. Verify the scanner is running: `curl http://localhost:3100/health` — should return JSON with mode, version, and status.
 2. Access the admin dashboard at `http://localhost:3100/admin` and log in with your `SCANNER_ADMIN_KEY`.
-3. Browse content on your gateway to trigger `DATA_CACHED` webhooks — the scanner will process them and results appear in the dashboard.
+3. Browse content on your gateway to trigger webhooks — the scanner will process them and results appear in the dashboard. With index-time scanning enabled, content is scanned automatically as it's indexed.
 4. Check scan metrics: `curl http://localhost:3100/metrics` — shows verdict counts, cache stats, and queue depth.
 5. Review detected content in the admin dashboard's Review Queue tab — confirm or dismiss detections.
 

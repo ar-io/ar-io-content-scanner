@@ -289,7 +289,7 @@ class Scanner:
         data = payload.data
         self.metrics.record_webhook()
 
-        if payload.event != "data-cached":
+        if payload.event not in self.settings.webhook_events:
             return
 
         # Fast path: skip non-HTML content types (unless a content scanner wants them)

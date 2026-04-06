@@ -144,6 +144,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "safe_browsing": True,
                 "safe_browsing_api_key": bool(settings.safe_browsing_api_key),
                 "content_scanners": registry.scanner_names,
+                "webhook_events": sorted(settings.webhook_events),
             },
         )
         yield

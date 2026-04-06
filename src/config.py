@@ -37,6 +37,11 @@ class Settings:
     # Mode: "dry-run" or "enforce"
     scanner_mode: str = "dry-run"
 
+    # Webhook events to process
+    webhook_events: frozenset[str] = frozenset({
+        "data-cached", "tx-indexed", "ans104-data-item-indexed",
+    })
+
     # ML model
     ml_model_enabled: bool = True
     ml_model_path: str = "./xgboost_model.pkl"
@@ -113,6 +118,23 @@ def load_settings() -> Settings:
         raise ValueError(
             f"SCANNER_MODE must be 'dry-run' or 'enforce', got '{mode}'"
         )
+
+    webhook_events_raw = os.environ.get(
+        "WEBHOOK_EVENTS",
+        "data-cached,tx-indexed,ans104-data-item-indexed",
+    )
+    webhook_events = frozenset(
+        e.strip() for e in webhook_events_raw.split(",") if e.strip()
+    )
+    known_events = {"data-cached", "tx-indexed", "ans104-data-item-indexed"}
+    unknown = webhook_events - known_events
+    if unknown:
+        raise ValueError(
+            f"WEBHOOK_EVENTS contains unknown events: {', '.join(sorted(unknown))}. "
+            f"Valid events: {', '.join(sorted(known_events))}"
+        )
+    if not webhook_events:
+        raise ValueError("WEBHOOK_EVENTS must contain at least one event")
 
     log_format = os.environ.get("LOG_FORMAT", "text").lower()
     if log_format not in ("text", "json"):
@@ -223,6 +245,7 @@ def load_settings() -> Settings:
         scanner_port=int(os.environ.get("SCANNER_PORT", "3100")),
         scanner_workers=scanner_workers,
         scanner_mode=mode,
+        webhook_events=webhook_events,
         ml_model_enabled=os.environ.get("ML_MODEL_ENABLED", "true").lower()
         == "true",
         ml_model_path=os.environ.get("ML_MODEL_PATH", "./xgboost_model.pkl"),

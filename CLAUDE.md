@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ar.io Content Scanner is a content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). It receives `DATA_CACHED` webhook events when the gateway caches new Arweave content, scans HTML for phishing patterns, and auto-blocks malicious content via the gateway's admin API.
+ar.io Content Scanner is a content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). It receives gateway webhook events (`data-cached`, `tx-indexed`, `ans104-data-item-indexed`) to scan content for phishing patterns and auto-block malicious content via the gateway's admin API. Supports both on-access scanning (via `data-cached`) and index-time scanning (via `tx-indexed`/`ans104-data-item-indexed`).
 
 Design philosophy: **precision over recall** — incorrectly blocking legitimate content is worse than missing phishing. Every detection rule requires 2+ independent signals (conjunctive logic) before triggering.
 
@@ -35,7 +35,7 @@ docker build -t content-scanner .
 
 ### Request Flow
 
-Gateway emits `DATA_CACHED` webhook → `POST /scan` (FastAPI) → `Scanner.process_webhook()` filters by content type & checks verdict cache → enqueues to SQLite `scan_queue` → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` → routes to appropriate scanning tier:
+Gateway emits webhook (`data-cached`, `tx-indexed`, or `ans104-data-item-indexed`) → `POST /scan` (FastAPI) → `WebhookPayload.model_validator` normalizes indexed event payloads into `WebhookData` shape → `Scanner.process_webhook()` filters by event type (via `settings.webhook_events`) & content type & checks verdict cache → enqueues to SQLite `scan_queue` → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` → routes to appropriate scanning tier:
 - **HTML content** → `RuleEngine.evaluate()` runs rules + ML (Tier 1)
 - **Non-HTML content** → `ScanDispatcher` → `ContentScannerRegistry` → matching `ContentScanner(s)` run concurrently (Tier 2)
 - **No scanner matches** → SKIPPED
@@ -46,7 +46,7 @@ After scanning → caches verdict in `scan_verdicts` table → checks Google Saf
 
 - **`server.py`**: FastAPI app with `build_app()` factory. Wires together all components via `lifespan`. Stores shared state on `app.state`.
 - **`config.py`**: Frozen `Settings` dataclass + `load_settings()` factory that reads and validates env vars. All settings flow from this single source.
-- **`models.py`**: Core types — `WebhookPayload`/`WebhookData` (Pydantic), `Verdict` enum (CLEAN/SUSPICIOUS/MALICIOUS/SKIPPED), `RuleResult`, `ScanResult`, `AdminOverride` dataclass.
+- **`models.py`**: Core types — `WebhookPayload`/`WebhookData` (Pydantic), `Verdict` enum (CLEAN/SUSPICIOUS/MALICIOUS/SKIPPED), `RuleResult`, `ScanResult`, `AdminOverride` dataclass. `WebhookPayload` has a `model_validator(mode='before')` that normalizes indexed event payloads (`tx-indexed`, `ans104-data-item-indexed`) into the `WebhookData` shape (field remapping, base64url tag decoding for content type, string→int coercion).
 - **`scanner.py`**: Two code paths — `process_webhook()` (fast filtering + enqueue) and `process_queue_item()` (fetch, parse, evaluate, act). Routes content to HTML rule engine or content scanners via `ScanDispatcher`. For HTML, runs defense-in-depth layers: static rules → iframe extraction (`rules/iframe_scanner.py`) → rendered DOM scan (via `ScreenshotService.render_dom()`). CPU-bound work runs via `run_in_executor()`. On cache miss, optionally queries verdict feed peers before scanning locally.
 - **`worker.py`**: `WorkerPool` runs N async worker loops that poll `scan_queue` with 0.5s sleep. Includes a cleanup loop that purges items older than 1 hour. Optionally runs backfill, feed poller, and Safe Browsing monitor loops.
 - **`backfill.py`**: `BackfillScanner` walks the gateway's contiguous data filesystem, content-sniffs for HTML, scans through the rule engine + ML, caches verdicts, and blocks malicious content in enforce mode. Uses `GatewayDBReader` for read-only hash→TX ID lookups via the gateway's `data.db`.
@@ -142,7 +142,7 @@ See `src/scanners/example_image_scanner.py` for a reference implementation.
 
 Required: `GATEWAY_URL`, `ADMIN_API_KEY`, `SCANNER_ADMIN_KEY`
 
-Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `LOG_FORMAT` (text|json, default: text — "text" for human-readable Docker logs, "json" for log aggregation), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
+Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `WEBHOOK_EVENTS` (comma-separated, default: `data-cached,tx-indexed,ans104-data-item-indexed` — controls which gateway webhook events are processed), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `LOG_FORMAT` (text|json, default: text — "text" for human-readable Docker logs, "json" for log aggregation), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
 
 Rule toggles (all default true): `RULE_SEED_PHRASE`, `RULE_EXTERNAL_CREDENTIAL_FORM`, `RULE_WALLET_IMPERSONATION`, `RULE_OBFUSCATED_LOADER`
 

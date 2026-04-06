@@ -1,5 +1,6 @@
 """Tests for the FastAPI server endpoints."""
 
+import base64
 import os
 import tempfile
 from unittest.mock import AsyncMock, patch
@@ -97,3 +98,44 @@ class TestScanEndpoint:
             },
         })
         assert resp.status_code == 202
+
+    def test_scan_accepts_tx_indexed(self, client):
+        ct_name = base64.urlsafe_b64encode(b"Content-Type").decode().rstrip("=")
+        ct_value = base64.urlsafe_b64encode(b"text/html").decode().rstrip("=")
+        resp = client.post("/scan", json={
+            "event": "tx-indexed",
+            "data": {
+                "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "data_size": "1024",
+                "data_root": "some-merkle-root",
+                "tags": [{"name": ct_name, "value": ct_value}],
+            },
+        })
+        assert resp.status_code == 202
+        assert resp.json() == {"status": "accepted"}
+
+    def test_scan_accepts_ans104_data_item_indexed(self, client):
+        resp = client.post("/scan", json={
+            "event": "ans104-data-item-indexed",
+            "data": {
+                "id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "data_hash": "abc123",
+                "data_size": 1024,
+                "content_type": "text/html",
+                "owner_address": "some-owner",
+                "parent_id": "some-parent",
+            },
+        })
+        assert resp.status_code == 202
+        assert resp.json() == {"status": "accepted"}
+
+    def test_scan_rejects_invalid_tx_id_indexed(self, client):
+        resp = client.post("/scan", json={
+            "event": "ans104-data-item-indexed",
+            "data": {
+                "id": "too-short",
+                "data_hash": "h1",
+                "data_size": 100,
+            },
+        })
+        assert resp.status_code == 422

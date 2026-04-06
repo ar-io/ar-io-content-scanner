@@ -4,7 +4,7 @@ This guide covers deploying, configuring, and operating Content Scanner alongsid
 
 ## Prerequisites
 
-- ar-io-node with `DATA_CACHED` webhook event support
+- ar-io-node with webhook event support (`data-cached`, `tx-indexed`, `ans104-data-item-indexed`)
 - Docker and Docker Compose
 - Your gateway's `ADMIN_API_KEY`
 - A separate `SCANNER_ADMIN_KEY` for admin dashboard access
@@ -19,8 +19,11 @@ Add these to your ar-io-node `.env`:
 # Point webhooks at Content Scanner
 WEBHOOK_TARGET_SERVERS=http://content-scanner:3100/scan
 
-# Enable the DATA_CACHED event (opt-in, default is false)
+# Enable the DATA_CACHED event for on-access scanning (opt-in, default is false)
 WEBHOOK_EMIT_DATA_CACHED_EVENTS=true
+
+# Optional: enable index-time scanning (catches content before first access)
+# WEBHOOK_INDEX_FILTER={"always": true}
 ```
 
 If your gateway has `ENABLE_RATE_LIMITER=true`, allowlist the Docker internal network so Content Scanner can fetch content:
@@ -323,10 +326,11 @@ All rules are enabled by default. Disable individual rules if needed:
 
 ### Content Scanner isn't scanning anything
 
-1. Check that `WEBHOOK_EMIT_DATA_CACHED_EVENTS=true` is set on the gateway
-2. Check that `WEBHOOK_TARGET_SERVERS` points to the correct Content Scanner URL
-3. Verify Content Scanner is healthy: `curl http://localhost:3100/health`
-4. Check gateway logs for webhook delivery errors
+1. Check that `WEBHOOK_EMIT_DATA_CACHED_EVENTS=true` is set on the gateway (for on-access scanning)
+2. For index-time scanning, also verify `WEBHOOK_INDEX_FILTER` is set on the gateway (e.g., `{"always": true}`)
+3. Check that `WEBHOOK_TARGET_SERVERS` points to the correct Content Scanner URL
+4. Verify Content Scanner is healthy: `curl http://localhost:3100/health`
+5. Check gateway logs for webhook delivery errors
 
 ### Blocks are failing (blocks_failed > 0)
 
