@@ -48,9 +48,13 @@ class GatewayClient:
 
                 return b"".join(chunks)
         except httpx.HTTPError as e:
-            logger.error(
+            logger.warning(
                 "HTTP error fetching content",
-                extra={"tx_id": tx_id, "error": str(e)},
+                extra={
+                    "tx_id": tx_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
             )
             return None
 

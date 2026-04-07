@@ -1,5 +1,6 @@
 """Tests for the Scanner orchestrator."""
 
+import asyncio
 import base64
 import os
 import tempfile
@@ -23,6 +24,7 @@ TEST_SETTINGS = Settings(
     gateway_url="http://localhost:3000",
     admin_api_key="test-key",
     scanner_mode="enforce",
+    webhook_index_delay=0,
 )
 
 
@@ -166,6 +168,7 @@ class TestIndexedEventProcessing:
             },
         })
         await scanner.process_webhook(payload)
+        await asyncio.sleep(0.01)  # let delayed enqueue task run
         assert db.queue_depth() == 1
 
     @pytest.mark.asyncio
@@ -180,6 +183,7 @@ class TestIndexedEventProcessing:
             },
         })
         await scanner.process_webhook(payload)
+        await asyncio.sleep(0.01)  # let delayed enqueue task run
         assert db.queue_depth() == 1
 
     @pytest.mark.asyncio
@@ -194,6 +198,7 @@ class TestIndexedEventProcessing:
             },
         })
         await scanner.process_webhook(payload)
+        await asyncio.sleep(0.01)  # let delayed enqueue task run
         assert db.queue_depth() == 1
 
     @pytest.mark.asyncio
@@ -219,6 +224,7 @@ class TestIndexedEventProcessing:
             admin_api_key="test-key",
             scanner_mode="enforce",
             webhook_events=frozenset({"data-cached"}),
+            webhook_index_delay=0,
         )
         gateway = AsyncMock(spec=GatewayClient)
         engine = RuleEngine(settings, classifier=None)
@@ -279,14 +285,14 @@ class TestQueueProcessing:
         scanner.gateway.block_data.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_fetch_failure_raises(self, scanner):
+    async def test_fetch_failure_skips_gracefully(self, scanner):
+        """Fetch failure returns without scanning or blocking."""
         scanner.gateway.fetch_content = AsyncMock(return_value=None)
         item = QueueRow(
             id=1, tx_id="tx1", content_hash="h1",
             content_type="text/html", data_size=100, received_at=0,
         )
-        with pytest.raises(RuntimeError, match="Failed to fetch content"):
-            await scanner.process_queue_item(item)
+        await scanner.process_queue_item(item)
         scanner.gateway.block_data.assert_not_called()
 
     @pytest.mark.asyncio

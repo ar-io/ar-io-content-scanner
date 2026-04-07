@@ -9,6 +9,8 @@ services:
       ADMIN_API_KEY: "${ADMIN_API_KEY}"
       SCANNER_ADMIN_KEY: "${SCANNER_ADMIN_KEY}"
       SCANNER_MODE: "${SCANNER_MODE:-dry-run}"
+      WEBHOOK_EVENTS: "${WEBHOOK_EVENTS:-data-cached,tx-indexed,ans104-data-item-indexed}"
+      WEBHOOK_INDEX_DELAY: "${WEBHOOK_INDEX_DELAY:-60}"
       SCANNER_WORKERS: "${SCANNER_WORKERS:-2}"
       LOG_LEVEL: "${LOG_LEVEL:-info}"
       LOG_FORMAT: "${LOG_FORMAT:-text}"

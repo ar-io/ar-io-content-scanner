@@ -42,6 +42,10 @@ class Settings:
         "data-cached", "tx-indexed", "ans104-data-item-indexed",
     })
 
+    # Delay (seconds) before enqueueing indexed events, giving the gateway
+    # time to finish data indexing so /raw/:id resolution works.
+    webhook_index_delay: int = 60
+
     # ML model
     ml_model_enabled: bool = True
     ml_model_path: str = "./xgboost_model.pkl"
@@ -135,6 +139,10 @@ def load_settings() -> Settings:
         )
     if not webhook_events:
         raise ValueError("WEBHOOK_EVENTS must contain at least one event")
+
+    webhook_index_delay = int(os.environ.get("WEBHOOK_INDEX_DELAY", "60"))
+    if webhook_index_delay < 0:
+        raise ValueError("WEBHOOK_INDEX_DELAY must be >= 0")
 
     log_format = os.environ.get("LOG_FORMAT", "text").lower()
     if log_format not in ("text", "json"):
@@ -246,6 +254,7 @@ def load_settings() -> Settings:
         scanner_workers=scanner_workers,
         scanner_mode=mode,
         webhook_events=webhook_events,
+        webhook_index_delay=webhook_index_delay,
         ml_model_enabled=os.environ.get("ML_MODEL_ENABLED", "true").lower()
         == "true",
         ml_model_path=os.environ.get("ML_MODEL_PATH", "./xgboost_model.pkl"),

@@ -12,7 +12,7 @@ from src.db import ScannerDB
 from src.gateway_client import GatewayClient
 from src.metrics import ScanMetrics
 from src.ml.features import parse_html
-from src.models import ScanResult, Verdict, WebhookPayload
+from src.models import ScanResult, Verdict, WebhookData, WebhookPayload
 from src.rules.engine import RuleEngine
 from src.db import QueueRow
 from src.screenshot import ScreenshotService
@@ -360,7 +360,27 @@ class Scanner:
                     )
                 return
 
-        # Enqueue for async scanning
+        # Enqueue for async scanning — indexed events are delayed to give
+        # the gateway's data indexer time to save parent bundle relationships
+        # that make /raw/:id resolution work.
+        if payload.event != "data-cached":
+            delay = self.settings.webhook_index_delay
+            asyncio.create_task(
+                self._delayed_enqueue(data, delay)
+            )
+        else:
+            enqueued = self.db.enqueue(
+                tx_id=data.id,
+                content_hash=data.hash,
+                content_type=data.contentType,
+                data_size=data.dataSize,
+            )
+            if enqueued:
+                logger.debug("enqueued", extra={"tx_id": data.id})
+
+    async def _delayed_enqueue(self, data: WebhookData, delay: int) -> None:
+        """Enqueue after a delay — used for indexed events."""
+        await asyncio.sleep(delay)
         enqueued = self.db.enqueue(
             tx_id=data.id,
             content_hash=data.hash,
@@ -368,7 +388,10 @@ class Scanner:
             data_size=data.dataSize,
         )
         if enqueued:
-            logger.debug("enqueued", extra={"tx_id": data.id})
+            logger.debug(
+                "enqueued_after_delay",
+                extra={"tx_id": data.id, "delay_s": delay},
+            )
 
     async def process_queue_item(self, item: QueueRow) -> None:
         tx_id = item.tx_id
@@ -486,7 +509,11 @@ class Scanner:
         # Fetch content from gateway
         content = await self.gateway.fetch_content(tx_id)
         if content is None:
-            raise RuntimeError(f"Failed to fetch content for {tx_id}")
+            logger.info(
+                "fetch_unavailable",
+                extra={"tx_id": tx_id, "content_hash": content_hash},
+            )
+            return
 
         # Determine if content is HTML or a type a content scanner handles
         effective_content_type = item.content_type
