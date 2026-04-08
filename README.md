@@ -165,6 +165,7 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `SCANNER_ADMIN_KEY` | Yes | -- | Secret key for the admin dashboard (separate from gateway key) |
 | `SCANNER_MODE` | No | `dry-run` | `dry-run` (log only) or `enforce` (auto-block) |
 | `WEBHOOK_EVENTS` | No | `data-cached,tx-indexed,ans104-data-item-indexed` | Comma-separated webhook events to process |
+| `WEBHOOK_INDEX_DELAY` | No | `60` | Seconds to wait before processing indexed events (0 = immediate) |
 | `SCANNER_PORT` | No | `3100` | HTTP server port |
 | `SCANNER_WORKERS` | No | `2` | Number of concurrent scan workers |
 | `ML_MODEL_ENABLED` | No | `true` | Enable XGBoost ML scoring |

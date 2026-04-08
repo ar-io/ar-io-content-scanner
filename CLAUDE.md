@@ -35,7 +35,7 @@ docker build -t content-scanner .
 
 ### Request Flow
 
-Gateway emits webhook (`data-cached`, `tx-indexed`, or `ans104-data-item-indexed`) → `POST /scan` (FastAPI) → `WebhookPayload.model_validator` normalizes indexed event payloads into `WebhookData` shape → `Scanner.process_webhook()` filters by event type (via `settings.webhook_events`) & content type & checks verdict cache → enqueues to SQLite `scan_queue` → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` → routes to appropriate scanning tier:
+Gateway emits webhook (`data-cached`, `tx-indexed`, or `ans104-data-item-indexed`) → `POST /scan` (FastAPI) → `WebhookPayload.model_validator` normalizes indexed event payloads into `WebhookData` shape → `Scanner.process_webhook()` filters by event type (via `settings.webhook_events`) & content type & checks verdict cache → enqueues to SQLite `scan_queue` (indexed events delayed by `WEBHOOK_INDEX_DELAY` seconds to let the gateway's data indexer save parent bundle relationships) → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` (fetch failures are skipped gracefully — `data-cached` handles retry) → routes to appropriate scanning tier:
 - **HTML content** → `RuleEngine.evaluate()` runs rules + ML (Tier 1)
 - **Non-HTML content** → `ScanDispatcher` → `ContentScannerRegistry` → matching `ContentScanner(s)` run concurrently (Tier 2)
 - **No scanner matches** → SKIPPED

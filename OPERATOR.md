@@ -238,6 +238,8 @@ Content Scanner does not include a built-in notification system. To get alerted 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SCANNER_MODE` | `dry-run` | `dry-run` logs detections; `enforce` auto-blocks |
+| `WEBHOOK_EVENTS` | `data-cached,tx-indexed,ans104-data-item-indexed` | Comma-separated webhook events to process |
+| `WEBHOOK_INDEX_DELAY` | `60` | Seconds to wait before processing indexed events (0 = immediate) |
 | `SCANNER_PORT` | `3100` | HTTP server port |
 | `SCANNER_WORKERS` | `2` | Concurrent scan workers |
 | `ML_MODEL_ENABLED` | `true` | Enable XGBoost ML scoring |
