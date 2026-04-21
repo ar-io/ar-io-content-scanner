@@ -225,7 +225,7 @@
               <thead>
                 <tr>
                   <th>Time</th>
-                  <th>TX ID</th>
+                  <th>Content ID</th>
                   <th>Verdict</th>
                   <th>Rules</th>
                   <th>ML Score</th>
@@ -237,6 +237,9 @@
                   <tr class="clickable" @click="$dispatch('switch-tab', 'review'); $dispatch('search-review', d.content_hash)">
                     <td x-text="formatTimestamp(d.scanned_at)" style="white-space: nowrap;"></td>
                     <td>
+                      <template x-if="idSourceLabel(d.tx_id)">
+                        <span class="id-badge" :class="'id-badge-' + idSource(d.tx_id)" x-text="idSourceLabel(d.tx_id)"></span>
+                      </template>
                       <template x-if="txUrl(d.tx_id)">
                         <a :href="txUrl(d.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(d.tx_id, 20)" :title="d.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'" @click.stop></a>
                       </template>

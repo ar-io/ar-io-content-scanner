@@ -11,12 +11,21 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Str
 from fastapi.templating import Jinja2Templates
 
 from src.admin.auth import require_admin_key
+from src.ipfs import is_ipfs_cid
 from src.models import Verdict
 
 logger = logging.getLogger("scanner.admin")
 
 _BASE64URL_43 = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _HASH_PATTERN = re.compile(r"^[A-Za-z0-9_+/=-]{1,64}$")
+_MAX_ID_LENGTH = 128
+
+
+def _is_valid_content_id(value: object) -> bool:
+    """Accept Arweave 43-char base64url or IPFS CID (v0/v1)."""
+    if not isinstance(value, str) or len(value) > _MAX_ID_LENGTH:
+        return False
+    return bool(_BASE64URL_43.match(value)) or is_ipfs_cid(value)
 
 
 def build_admin_router(app_state) -> APIRouter:
@@ -521,7 +530,7 @@ def build_admin_router(app_state) -> APIRouter:
             raise HTTPException(status_code=400, detail="tx_id or tx_ids is required")
         if len(tx_ids_raw) > 100:
             raise HTTPException(
-                status_code=400, detail="Maximum 100 TX IDs per request"
+                status_code=400, detail="Maximum 100 IDs per request"
             )
 
         db = _state.db
@@ -532,8 +541,11 @@ def build_admin_router(app_state) -> APIRouter:
         errors = []
 
         for tx_id in tx_ids_raw:
-            if not isinstance(tx_id, str) or not _BASE64URL_43.match(tx_id):
-                errors.append({"tx_id": str(tx_id)[:64], "error": "Invalid TX ID"})
+            if not _is_valid_content_id(tx_id):
+                errors.append({
+                    "tx_id": str(tx_id)[:64],
+                    "error": "Invalid ID (expected Arweave TX ID or IPFS CID)",
+                })
                 continue
 
             already_existed = db.has_verdict(tx_id)
@@ -596,7 +608,10 @@ def build_admin_router(app_state) -> APIRouter:
         # Single-TX backward-compatible response
         if single_tx_id and not body.get("tx_ids"):
             if not results:
-                raise HTTPException(status_code=400, detail="Invalid TX ID")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid ID (expected Arweave TX ID or IPFS CID)",
+                )
             r = results[0]
             return {
                 "status": "blocked",

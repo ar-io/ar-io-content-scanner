@@ -19,6 +19,7 @@ from src.scanner import Scanner, is_html_content_type, looks_like_html
 # Valid 43-char base64url IDs for tests
 TX1 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 TX2 = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+CIDV1 = "bafkreigbk3hjz6oyiywqf7eknthwc2osvt5xi6b6igwljn2qrxkthqgrp4"
 
 TEST_SETTINGS = Settings(
     gateway_url="http://localhost:3000",
@@ -145,6 +146,29 @@ class TestWebhookProcessing:
         )
         await scanner.process_webhook(payload)
         scanner.gateway.block_data.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ipfs_cid_enqueues(self, scanner, db):
+        """data-cached events with an IPFS CID id should enqueue like Arweave."""
+        payload = WebhookPayload(
+            event="data-cached",
+            data=WebhookData(id=CIDV1, hash="h_ipfs", contentType="text/html"),
+        )
+        await scanner.process_webhook(payload)
+        assert db.queue_depth() == 1
+
+    @pytest.mark.asyncio
+    async def test_ipfs_cache_hit_malicious_blocks_with_cid(self, scanner, db):
+        """Blocking via the gateway should use the CID verbatim as the id."""
+        db.save_verdict("h_ipfs", "old-cid", Verdict.MALICIOUS, "[]", None, "0.1.0")
+        payload = WebhookPayload(
+            event="data-cached",
+            data=WebhookData(id=CIDV1, hash="h_ipfs", contentType="text/html"),
+        )
+        await scanner.process_webhook(payload)
+        scanner.gateway.block_data.assert_called_once()
+        call_args = scanner.gateway.block_data.call_args
+        assert call_args.args[0] == CIDV1
 
 
 def _b64url_tag(name: str, value: str) -> dict:

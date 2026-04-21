@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ar.io Content Scanner is a content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). It receives gateway webhook events (`data-cached`, `tx-indexed`, `ans104-data-item-indexed`) to scan content for phishing patterns and auto-block malicious content via the gateway's admin API. Supports both on-access scanning (via `data-cached`) and index-time scanning (via `tx-indexed`/`ans104-data-item-indexed`).
+ar.io Content Scanner is a content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). It receives gateway webhook events (`data-cached`, `tx-indexed`, `ans104-data-item-indexed`) to scan content for phishing patterns and auto-block malicious content via the gateway's admin API. Supports both on-access scanning (via `data-cached`) and index-time scanning (via `tx-indexed`/`ans104-data-item-indexed`). Works with both Arweave TX IDs and IPFS CIDs — the scanner auto-detects the addressing scheme from the webhook `id` field and fetches content from the correct gateway path.
 
 Design philosophy: **precision over recall** — incorrectly blocking legitimate content is worse than missing phishing. Every detection rule requires 2+ independent signals (conjunctive logic) before triggering.
 
@@ -35,7 +35,7 @@ docker build -t content-scanner .
 
 ### Request Flow
 
-Gateway emits webhook (`data-cached`, `tx-indexed`, or `ans104-data-item-indexed`) → `POST /scan` (FastAPI) → `WebhookPayload.model_validator` normalizes indexed event payloads into `WebhookData` shape → `Scanner.process_webhook()` filters by event type (via `settings.webhook_events`) & content type & checks verdict cache → enqueues to SQLite `scan_queue` (indexed events delayed by `WEBHOOK_INDEX_DELAY` seconds to let the gateway's data indexer save parent bundle relationships) → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` (fetch failures are skipped gracefully — `data-cached` handles retry) → routes to appropriate scanning tier:
+Gateway emits webhook (`data-cached`, `tx-indexed`, or `ans104-data-item-indexed`) → `POST /scan` (FastAPI) → `WebhookPayload.model_validator` normalizes indexed event payloads into `WebhookData` shape → `Scanner.process_webhook()` filters by event type (via `settings.webhook_events`) & content type & checks verdict cache → enqueues to SQLite `scan_queue` (indexed events delayed by `WEBHOOK_INDEX_DELAY` seconds to let the gateway's data indexer save parent bundle relationships) → `WorkerPool` dequeues → optionally queries verdict feed peers (on-demand) → fetches content from gateway via `GET /raw/:id` for Arweave TX IDs or `GET /ipfs/:cid` for IPFS CIDs (path is chosen by `src/ipfs.gateway_fetch_path`; fetch failures are skipped gracefully — `data-cached` handles retry) → routes to appropriate scanning tier:
 - **HTML content** → `RuleEngine.evaluate()` runs rules + ML (Tier 1)
 - **Non-HTML content** → `ScanDispatcher` → `ContentScannerRegistry` → matching `ContentScanner(s)` run concurrently (Tier 2)
 - **No scanner matches** → SKIPPED
@@ -49,10 +49,11 @@ After scanning → caches verdict in `scan_verdicts` table → checks Google Saf
 - **`models.py`**: Core types — `WebhookPayload`/`WebhookData` (Pydantic), `Verdict` enum (CLEAN/SUSPICIOUS/MALICIOUS/SKIPPED), `RuleResult`, `ScanResult`, `AdminOverride` dataclass. `WebhookPayload` has a `model_validator(mode='before')` that normalizes indexed event payloads (`tx-indexed`, `ans104-data-item-indexed`) into the `WebhookData` shape (field remapping, base64url tag decoding for content type, string→int coercion).
 - **`scanner.py`**: Two code paths — `process_webhook()` (fast filtering + enqueue) and `process_queue_item()` (fetch, parse, evaluate, act). Routes content to HTML rule engine or content scanners via `ScanDispatcher`. For HTML, runs defense-in-depth layers: static rules → iframe extraction (`rules/iframe_scanner.py`) → rendered DOM scan (via `ScreenshotService.render_dom()`). CPU-bound work runs via `run_in_executor()`. On cache miss, optionally queries verdict feed peers before scanning locally.
 - **`worker.py`**: `WorkerPool` runs N async worker loops that poll `scan_queue` with 0.5s sleep. Includes a cleanup loop that purges items older than 1 hour. Optionally runs backfill, feed poller, and Safe Browsing monitor loops.
-- **`backfill.py`**: `BackfillScanner` walks the gateway's contiguous data filesystem, content-sniffs for HTML, scans through the rule engine + ML, caches verdicts, and blocks malicious content in enforce mode. Uses `GatewayDBReader` for read-only hash→TX ID lookups via the gateway's `data.db`.
+- **`backfill.py`**: `BackfillScanner` walks the gateway's contiguous data filesystem, content-sniffs for HTML, scans through the rule engine + ML, caches verdicts, and blocks malicious content in enforce mode. Uses `GatewayDBReader` for read-only hash→TX ID lookups via the gateway's `data.db`. **IPFS cached content is not covered by backfill** — it lives in a separate `data/ipfs-cache/` directory with a different layout (hash-based subdirs plus `.meta` companion files). IPFS content is still scanned via the on-access (`data-cached`) webhook path; a dedicated IPFS sweep is future work.
 - **`db.py`**: Five SQLite tables — `scan_verdicts` (content hash → verdict, with `source` column for local vs peer origin and `safe_browsing_flagged` column), `scan_queue` (pending/processing/failed items), `admin_overrides` (operator confirm/dismiss decisions), `feed_sync_state` (cursor-based sync tracking per peer), `scanner_state` (key-value persistence for dashboard stats across restarts). WAL mode for concurrent reads. `has_verdict()` for efficient backfill cache checks.
 - **`rules/engine.py`**: `RuleEngine.evaluate()` runs all enabled rules, then applies the verdict matrix combining rule results with ML score. Shared helpers live in `rules/utils.py` (e.g. `has_password_like_input()` used by multiple rules).
-- **`gateway_client.py`**: Async httpx client with streaming fetch (respects `max_bytes` limit) and block API call.
+- **`gateway_client.py`**: Async httpx client with streaming fetch (respects `max_bytes` limit) and block API call. `fetch_content()` routes via `src/ipfs.gateway_fetch_path` (`/raw/:id` for Arweave TX IDs, `/ipfs/:cid` for IPFS CIDs); `block_data()` passes the id verbatim — the gateway's `PUT /ar-io/admin/block-data` endpoint accepts both id formats.
+- **`ipfs.py`**: CID detection and gateway-path helpers. `is_ipfs_cid()` uses a prefix + length check (CIDv1 base32 starts with `baf` and is longer than 43 chars; CIDv0 starts with `Qm` and is exactly 46 chars). Arweave IDs are always 43-char base64url so the two can't collide. Also mirrored in JS as `isIpfsCid()` in `src/static/admin/app.js` for admin UI link construction.
 - **`metrics.py`**: Thread-safe `ScanMetrics` with counters for verdicts, sources, rule triggers, feed import/export stats, and Safe Browsing checks/escalations/errors. Exposes `/metrics/prometheus` endpoint.
 - **`safe_browsing.py`**: `SafeBrowsingClient` with two backends: Lookup API v4 (`check_url()`/`check_urls()`, requires `SAFE_BROWSING_API_KEY`) for per-URL checks, and Google Transparency Report (`check_domain()`, no key needed) for site-level domain monitoring. Returns `SafeBrowsingResult` or `DomainStatus`. Fail-open design: API errors never affect scanning. Used on-verdict (in `scanner.py`) and periodically (in `worker.py`'s monitor loop). Domain monitoring requires `GATEWAY_PUBLIC_URL` to be set.
 - **`screenshot.py`**: `ScreenshotService` uses Playwright (headless Chromium) to capture screenshots of flagged content and render DOM for two-pass scanning (`render_dom()`). Network-isolated: only gateway-origin requests are allowed. Screenshots stored as `{SCREENSHOT_DIR}/{content_hash}.jpg`, deleted when admin confirms/dismisses.
@@ -82,12 +83,12 @@ GATEWAY_PUBLIC_URL required to enable domain monitoring
 
 ### Detection Rules (all conjunctive: multiple independent signals required)
 
-| Rule | Signals |
-|------|---------|
+| Rule | Signals (all must match) |
+|------|--------------------------|
 | `seed-phrase-harvesting` | 6+ text inputs AND seed phrase terminology AND external data transmission |
-| `external-credential-form` | Password input | Form action is absolute URL OR JS exfil patterns ($.ajax, fetch, etc.) with external URL |
-| `wallet-impersonation` | Crypto brand in title/headings/img alt/body text | Password input or key-phrase terminology |
-| `obfuscated-loader` | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
+| `external-credential-form` | Password input AND (form action is absolute URL OR JS exfil patterns such as `$.ajax`/`fetch` targeting an external URL) |
+| `wallet-impersonation` | Crypto brand in title/headings/img alt/body text AND (password input OR key-phrase terminology) |
+| `obfuscated-loader` | DOM injection AND encoding functions in script AND (long base64 OR hex escapes OR charcode chains) |
 
 ### Defense-in-Depth Layers
 
@@ -175,4 +176,6 @@ GitHub Actions (`.github/workflows/build-and-push.yml`) runs `pytest` (excluding
 ## Related Docs
 
 - **`OPERATOR.md`** — Production deployment guide (health checks, metrics, troubleshooting, backfill monitoring).
+- **`CONTRIBUTING.md`** — PR checklist, branching workflow, and design constraints for contributors.
+- **`content-moderation-pipeline.md`** — Architecture overview of the broader AR.IO moderation pipeline (legacy gateway, Phisherman, shepherd-syncer, cross-account IAM). Useful context when integrating this scanner with upstream systems.
 - **`training/`** — ML model training pipeline scripts (data collection, feature extraction, XGBoost training). Changes here require retraining and updating `xgboost_model.pkl`.

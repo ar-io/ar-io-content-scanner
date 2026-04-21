@@ -14,6 +14,8 @@ from src.models import (
 )
 
 TX1 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+CIDV1 = "bafkreigbk3hjz6oyiywqf7eknthwc2osvt5xi6b6igwljn2qrxkthqgrp4"
+CIDV0 = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
 
 
 def _b64url_encode(s: str) -> str:
@@ -241,6 +243,36 @@ class TestPayloadNormalization:
                     "data_size": -100,
                     "content_type": "text/html",
                 },
+            })
+
+    def test_data_cached_with_ipfs_cidv1(self):
+        """IPFS CIDv1 should flow through WebhookData without validation errors."""
+        payload = WebhookPayload.model_validate({
+            "event": "data-cached",
+            "data": {
+                "id": CIDV1,
+                "hash": "a" * 64,
+                "dataSize": 171425,
+                "contentType": "text/html",
+                "cachedAt": 1776724390,
+            },
+        })
+        assert payload.data.id == CIDV1
+        assert payload.data.hash == "a" * 64
+
+    def test_data_cached_with_ipfs_cidv0(self):
+        payload = WebhookPayload.model_validate({
+            "event": "data-cached",
+            "data": {"id": CIDV0, "contentType": "text/html"},
+        })
+        assert payload.data.id == CIDV0
+
+    def test_invalid_id_rejected(self):
+        import pytest
+        with pytest.raises(Exception):
+            WebhookPayload.model_validate({
+                "event": "data-cached",
+                "data": {"id": "not-an-id", "contentType": "text/html"},
             })
 
     def test_tx_indexed_invalid_base64_tags_end_to_end(self):

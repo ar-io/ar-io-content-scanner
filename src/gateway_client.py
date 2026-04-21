@@ -5,6 +5,8 @@ import logging
 
 import httpx
 
+from src.ipfs import gateway_fetch_path
+
 logger = logging.getLogger("scanner.gateway")
 
 
@@ -25,8 +27,9 @@ class GatewayClient:
         )
 
     async def fetch_content(self, tx_id: str) -> bytes | None:
+        path = gateway_fetch_path(tx_id)
         try:
-            async with self._client.stream("GET", f"/raw/{tx_id}") as resp:
+            async with self._client.stream("GET", path) as resp:
                 if resp.status_code != 200:
                     logger.warning(
                         "Failed to fetch content",

@@ -2,7 +2,7 @@
 <div x-data="blockTab" x-init="init()" @close-modal.window="if (!loading) confirmDialog.show = false">
   <div class="section-header">
     <h2>Manual Block</h2>
-    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block Arweave transactions by TX ID. Paste one or more TX IDs, one per line. Blocks immediately regardless of scanner mode.</p>
+    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block content by Arweave TX ID or IPFS CID. Paste one or more IDs, one per line. Blocks immediately regardless of scanner mode.</p>
   </div>
 
   <template x-if="error">
@@ -15,14 +15,14 @@
   <!-- Block Form -->
   <div style="margin-bottom: 32px;">
     <div style="margin-bottom: 16px;">
-      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Transaction ID(s)</label>
+      <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Content ID(s)</label>
       <textarea x-model="txInput" :disabled="loading" class="block-txids"
-        placeholder="Paste one or more TX IDs, one per line&#10;e.g. xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ"
+        placeholder="Paste one or more IDs, one per line&#10;Arweave: xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ&#10;IPFS:    bafkreigbk3hjz6oyiywqf7eknthwc2osvt5xi6b6igwljn2qrxkthqgrp4"
         @input="validationError = ''"></textarea>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; min-height: 20px;">
         <span x-show="validationError" style="color: var(--color-red); font-size: 0.8rem;" x-text="validationError"></span>
         <span x-show="!validationError"></span>
-        <span style="font-size: 0.75rem; color: var(--color-gray);" x-text="parseTxIds().length === 1 ? '1 TX ID' : parseTxIds().length + ' TX IDs'" x-show="parseTxIds().length > 0"></span>
+        <span style="font-size: 0.75rem; color: var(--color-gray);" x-text="parseTxIds().length === 1 ? '1 ID' : parseTxIds().length + ' IDs'" x-show="parseTxIds().length > 0"></span>
       </div>
     </div>
     <div style="margin-bottom: 16px;">
@@ -31,7 +31,7 @@
         placeholder="e.g. reported phishing, known scam">
     </div>
     <button class="btn btn-danger" @click="promptBlock()" :disabled="parseTxIds().length === 0 || loading">
-      <span x-text="parseTxIds().length <= 1 ? 'Block Transaction' : 'Block ' + parseTxIds().length + ' Transactions'"></span>
+      <span x-text="parseTxIds().length <= 1 ? 'Block Content' : 'Block ' + parseTxIds().length + ' Items'"></span>
     </button>
   </div>
 
@@ -41,8 +41,8 @@
       <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;">Manual Blocks</h3>
       <div style="display: flex; align-items: center; gap: 8px;">
         <span style="font-size: 0.8rem; color: var(--color-gray);" x-text="historyTotal + ' total'"></span>
-        <button class="btn btn-sm btn-outline" @click="exportBlockedTxIds('manual')" title="Export manual block TX IDs as text" style="font-size: 0.75rem;">Export TX IDs</button>
-        <button class="btn btn-sm btn-outline" @click="exportBlockedTxIds('all')" title="Export ALL blocked TX IDs (scanner + manual)" style="font-size: 0.75rem;">Export All Blocked</button>
+        <button class="btn btn-sm btn-outline" @click="exportBlockedTxIds('manual')" title="Export manual block IDs as text" style="font-size: 0.75rem;">Export IDs</button>
+        <button class="btn btn-sm btn-outline" @click="exportBlockedTxIds('all')" title="Export ALL blocked IDs (scanner + manual)" style="font-size: 0.75rem;">Export All Blocked</button>
         <button class="btn btn-sm btn-outline" @click="loadHistory()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       </div>
     </div>
@@ -55,7 +55,7 @@
       <div class="card empty-state">
         <div class="empty-state-icon">&#128274;</div>
         <p class="empty-state-title">No manual blocks yet</p>
-        <p class="empty-state-text">Transactions you block above will appear here.</p>
+        <p class="empty-state-text">Content you block above will appear here.</p>
       </div>
     </template>
 
@@ -64,7 +64,7 @@
         <thead>
           <tr>
             <th>Blocked At</th>
-            <th>TX ID</th>
+            <th>Content ID</th>
             <th>Reason</th>
             <th>Status</th>
             <th></th>
@@ -75,13 +75,16 @@
             <tr>
               <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
               <td>
+                <template x-if="idSourceLabel(item.tx_id)">
+                  <span class="id-badge" :class="'id-badge-' + idSource(item.tx_id)" x-text="idSourceLabel(item.tx_id)"></span>
+                </template>
                 <template x-if="txUrl(item.tx_id)">
                   <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
                 </template>
                 <template x-if="!txUrl(item.tx_id)">
                   <span class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id"></span>
                 </template>
-                <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+                <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy ID">
                   <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                   <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </button>
@@ -123,15 +126,15 @@
   <div x-show="confirmDialog.show" class="modal-backdrop" @click.self="if (!loading) confirmDialog.show = false" x-transition>
     <div class="confirm-dialog">
       <h3 class="font-display" style="font-size: 1.1rem; margin: 0 0 8px;">
-        <span x-text="confirmDialog.txIds.length === 1 ? 'Block Transaction' : 'Block ' + confirmDialog.txIds.length + ' Transactions'"></span>
+        <span x-text="confirmDialog.txIds.length === 1 ? 'Block Content' : 'Block ' + confirmDialog.txIds.length + ' Items'"></span>
       </h3>
       <p style="font-size: 0.85rem; color: var(--color-gray); margin: 0 0 16px; line-height: 1.5;">
-        <span x-show="confirmDialog.txIds.length === 1">This will immediately block the transaction on the gateway.</span>
-        <span x-show="confirmDialog.txIds.length > 1" x-text="'This will immediately block ' + confirmDialog.txIds.length + ' transactions on the gateway.'"></span>
+        <span x-show="confirmDialog.txIds.length === 1">This will immediately block the content on the gateway.</span>
+        <span x-show="confirmDialog.txIds.length > 1" x-text="'This will immediately block ' + confirmDialog.txIds.length + ' items on the gateway.'"></span>
         The block applies regardless of scanner mode (dry-run or enforce). You can revert blocks from the Review Queue later.
       </p>
       <div style="margin-bottom: 12px; font-size: 0.85rem; max-height: 200px; overflow-y: auto;">
-        <span style="color: var(--color-gray);" x-text="confirmDialog.txIds.length === 1 ? 'TX ID:' : 'TX IDs:'"></span>
+        <span style="color: var(--color-gray);" x-text="confirmDialog.txIds.length === 1 ? 'Content ID:' : 'Content IDs:'"></span>
         <template x-for="id in confirmDialog.txIds" :key="id">
           <div class="mono" style="margin-top: 4px; word-break: break-all; font-size: 0.8rem;" x-text="id"></div>
         </template>
@@ -148,7 +151,7 @@
         </template>
         <button class="btn btn-outline btn-sm" @click="confirmDialog.show = false" :disabled="loading">Cancel</button>
         <button class="btn btn-danger btn-sm" @click="executeBlock()" :disabled="loading">
-          <span x-show="!loading" x-text="confirmDialog.txIds.length === 1 ? 'Block Transaction' : 'Block ' + confirmDialog.txIds.length + ' Transactions'"></span>
+          <span x-show="!loading" x-text="confirmDialog.txIds.length === 1 ? 'Block Content' : 'Block ' + confirmDialog.txIds.length + ' Items'"></span>
           <span x-show="loading" class="spinner"></span>
         </button>
       </div>
