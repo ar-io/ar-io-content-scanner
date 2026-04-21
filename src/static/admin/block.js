@@ -1,7 +1,13 @@
 /* block.js — Manual block tab logic */
 
 document.addEventListener('alpine:init', function () {
-  var TX_ID_RE = /^[A-Za-z0-9_-]{43}$/;
+  var ARWEAVE_ID_RE = /^[A-Za-z0-9_-]{43}$/;
+
+  // Accepts either an Arweave TX ID or an IPFS CID (CIDv0 / CIDv1).
+  // isIpfsCid is defined in app.js.
+  function isValidContentId(s) {
+    return ARWEAVE_ID_RE.test(s) || isIpfsCid(s);
+  }
 
   Alpine.data('blockTab', function () {
     return {
@@ -63,21 +69,21 @@ document.addEventListener('alpine:init', function () {
       validateTxIds() {
         var ids = this.parseTxIds();
         if (ids.length === 0) {
-          this.validationError = 'At least one TX ID is required';
+          this.validationError = 'At least one ID is required';
           return null;
         }
         if (ids.length > 100) {
-          this.validationError = 'Maximum 100 TX IDs at once';
+          this.validationError = 'Maximum 100 IDs at once';
           return null;
         }
         var invalid = [];
         for (var i = 0; i < ids.length; i++) {
-          if (!TX_ID_RE.test(ids[i])) {
+          if (!isValidContentId(ids[i])) {
             invalid.push(ids[i].substring(0, 20) + (ids[i].length > 20 ? '...' : ''));
           }
         }
         if (invalid.length > 0) {
-          this.validationError = 'Invalid TX ID' + (invalid.length > 1 ? 's' : '') + ': ' + invalid.slice(0, 3).join(', ') + (invalid.length > 3 ? ' (+' + (invalid.length - 3) + ' more)' : '');
+          this.validationError = 'Invalid ID' + (invalid.length > 1 ? 's' : '') + ' (expected Arweave TX ID or IPFS CID): ' + invalid.slice(0, 3).join(', ') + (invalid.length > 3 ? ' (+' + (invalid.length - 3) + ' more)' : '');
           return null;
         }
         // Deduplicate
@@ -133,7 +139,7 @@ document.addEventListener('alpine:init', function () {
 
           if (isSingle) {
             var msg = result.blocked
-              ? 'Transaction blocked successfully'
+              ? 'Content blocked successfully'
               : 'Verdict saved but gateway block failed';
             if (result.already_existed) msg += ' (overwrote existing verdict)';
             Alpine.store('toast').show(msg, result.blocked ? 'success' : 'error');
@@ -161,18 +167,18 @@ document.addEventListener('alpine:init', function () {
           if (!resp.ok) throw new Error('Export failed (HTTP ' + resp.status + ')');
           var text = await resp.text();
           if (!text.trim()) {
-            Alpine.store('toast').show('No blocked TX IDs to export', 'info');
+            Alpine.store('toast').show('No blocked IDs to export', 'info');
             return;
           }
           var blob = new Blob([text], { type: 'text/plain' });
           var url = URL.createObjectURL(blob);
           var a = document.createElement('a');
           a.href = url;
-          a.download = source === 'manual' ? 'manual_blocked_tx_ids.txt' : 'all_blocked_tx_ids.txt';
+          a.download = source === 'manual' ? 'manual_blocked_ids.txt' : 'all_blocked_ids.txt';
           a.click();
           URL.revokeObjectURL(url);
           var count = text.trim().split('\n').length;
-          Alpine.store('toast').show('Exported ' + count + ' TX IDs', 'success');
+          Alpine.store('toast').show('Exported ' + count + ' IDs', 'success');
         } catch (e) {
           Alpine.store('toast').show('Export failed: ' + (e.message || 'Unknown error'), 'error');
         }

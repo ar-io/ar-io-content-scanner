@@ -1,6 +1,6 @@
 # ar.io Content Scanner
 
-A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). Detects and auto-blocks phishing content hosted on Arweave, keeping gateways clean and off blocklists like Netcraft and Google Safe Browsing.
+A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io-node). Detects and auto-blocks phishing content served by the gateway — both Arweave (TX ID) and IPFS (CID) — keeping gateways clean and off blocklists like Netcraft and Google Safe Browsing.
 
 ## How It Works
 
@@ -64,6 +64,8 @@ A content moderation sidecar for [ar.io gateways](https://github.com/ar-io/ar-io
 **On-access scanning** (`data-cached`): The first user to access malicious content sees it. All subsequent requests are blocked.
 
 **Index-time scanning** (`tx-indexed`, `ans104-data-item-indexed`): Content is scanned when indexed by the gateway, before any user accesses it. Requires `WEBHOOK_INDEX_FILTER` on the gateway. Note: for `tx-indexed` events, the content hash is unavailable (only a merkle root), so verdicts are not cached until the content is accessed and a `data-cached` event provides the real hash.
+
+**IPFS content**: When the gateway serves IPFS content (CIDs), it emits the same `data-cached` webhook with a CID in the `id` field. The scanner auto-detects the addressing scheme — Arweave TX IDs are fetched from `GET /raw/{id}` and IPFS CIDs from `GET /ipfs/{id}` — and the same rules, ML model, blocking pipeline, and verdict feed apply. Blocks are issued via `PUT /ar-io/admin/block-data` with the CID in the `id` field; the gateway accepts both ID formats. (Backfill currently scans only Arweave contiguous data; IPFS cache backfill is a future enhancement.)
 
 ## Quick Start
 

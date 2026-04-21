@@ -8,8 +8,12 @@ from typing import Any
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from src.ipfs import is_ipfs_cid
+
 # Arweave IDs: 43-character base64url strings
 _BASE64URL_43 = re.compile(r"^[A-Za-z0-9_-]{43}$")
+# Upper bound so a malformed long string can't be accepted as a CID.
+_MAX_ID_LENGTH = 128
 
 
 def _b64url_decode(s: str) -> str:
@@ -50,9 +54,13 @@ class WebhookData(BaseModel):
     @field_validator("id")
     @classmethod
     def id_must_be_valid(cls, v: str) -> str:
-        if not _BASE64URL_43.match(v):
-            raise ValueError("id must be a 43-character base64url string")
-        return v
+        if _BASE64URL_43.match(v):
+            return v
+        if len(v) <= _MAX_ID_LENGTH and is_ipfs_cid(v):
+            return v
+        raise ValueError(
+            "id must be a 43-character base64url Arweave ID or an IPFS CID"
+        )
 
     @field_validator("hash")
     @classmethod

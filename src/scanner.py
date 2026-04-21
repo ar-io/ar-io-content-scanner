@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from src.config import Settings
 from src.db import ScannerDB
 from src.gateway_client import GatewayClient
+from src.ipfs import gateway_public_path
 from src.metrics import ScanMetrics
 from src.ml.features import parse_html
 from src.models import ScanResult, Verdict, WebhookData, WebhookPayload
@@ -214,7 +215,7 @@ class Scanner:
         If SUSPICIOUS and Google flags it, escalate to MALICIOUS.
         Updates the safe_browsing_flagged column in scan_verdicts.
         """
-        url = f"{self.settings.gateway_public_url}/{tx_id}"
+        url = f"{self.settings.gateway_public_url}{gateway_public_path(tx_id)}"
         try:
             sb_result = await self.safe_browsing.check_url(url)
             self.metrics.record_safe_browsing_check(sb_result.flagged)

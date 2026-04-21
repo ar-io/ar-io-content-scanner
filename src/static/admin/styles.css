@@ -76,6 +76,21 @@ body {
   margin-right: 4px;
 }
 
+/* ---- ID source badge (AR / IPFS) ---- */
+.id-badge {
+  display: inline-block;
+  padding: 0 6px;
+  margin-right: 6px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.id-badge-arweave { background: var(--color-lavender-light); color: var(--color-primary); }
+.id-badge-ipfs { background: #E0F2FE; color: #0369A1; }
+
 /* ---- Buttons ---- */
 .btn {
   display: inline-flex;

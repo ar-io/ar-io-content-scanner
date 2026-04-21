@@ -15,7 +15,7 @@
   <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
     <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
       <div style="position: relative; flex: 1; min-width: 200px; max-width: 360px;">
-        <input type="text" x-model="searchQuery" @input="onSearch()" placeholder="Search by TX ID or content hash..."
+        <input type="text" x-model="searchQuery" @input="onSearch()" placeholder="Search by content ID or hash..."
           style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box;">
       </div>
       <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
@@ -91,14 +91,17 @@
           <!-- Left: info -->
           <div style="flex: 1; min-width: 0;">
             <div style="margin-bottom: 8px;">
-              <span style="font-size: 0.8rem; color: var(--color-gray);">TX ID: </span>
+              <span style="font-size: 0.8rem; color: var(--color-gray);">Content ID: </span>
+              <template x-if="idSourceLabel(item.tx_id)">
+                <span class="id-badge" :class="'id-badge-' + idSource(item.tx_id)" x-text="idSourceLabel(item.tx_id)"></span>
+              </template>
               <template x-if="txUrl(item.tx_id)">
                 <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="item.tx_id" style="word-break: break-all; color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
               </template>
               <template x-if="!txUrl(item.tx_id)">
                 <span class="mono" x-text="item.tx_id" style="word-break: break-all;"></span>
               </template>
-              <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+              <button class="copy-btn" x-data="{ copied: false }" @click.stop="copyToClipboard(item.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy ID">
                 <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                 <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               </button>
@@ -300,15 +303,18 @@
           <div class="grid-kv-wide" style="margin-bottom: 20px;">
             <div style="color: var(--color-gray); font-weight: 600;">Verdict</div>
             <div><span :class="badgeClass(detail.verdict)" x-text="detail.verdict"></span></div>
-            <div style="color: var(--color-gray); font-weight: 600;">TX ID</div>
+            <div style="color: var(--color-gray); font-weight: 600;">Content ID</div>
             <div>
+              <template x-if="idSourceLabel(detail.tx_id)">
+                <span class="id-badge" :class="'id-badge-' + idSource(detail.tx_id)" x-text="idSourceLabel(detail.tx_id)"></span>
+              </template>
               <template x-if="txUrl(detail.tx_id)">
                 <a :href="txUrl(detail.tx_id)" target="_blank" rel="noopener" class="mono" style="word-break: break-all; color: var(--color-primary); text-decoration: none;" x-text="detail.tx_id" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
               </template>
               <template x-if="!txUrl(detail.tx_id)">
                 <span class="mono" style="word-break: break-all;" x-text="detail.tx_id"></span>
               </template>
-              <button class="copy-btn" x-data="{ copied: false }" @click="copyToClipboard(detail.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy TX ID">
+              <button class="copy-btn" x-data="{ copied: false }" @click="copyToClipboard(detail.tx_id); copied = true; setTimeout(() => copied = false, 1500)" title="Copy ID">
                 <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                 <svg x-show="copied" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               </button>

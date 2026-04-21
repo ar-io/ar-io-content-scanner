@@ -647,6 +647,27 @@ class TestManualBlock:
             )
             assert resp.status_code == 400, f"Expected 400 for tx_id={bad_id!r}"
 
+    def test_manual_block_accepts_ipfs_cidv1(self, block_client, block_db):
+        cid = "bafkreigbk3hjz6oyiywqf7eknthwc2osvt5xi6b6igwljn2qrxkthqgrp4"
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_id": cid, "reason": "ipfs phishing"},
+        )
+        assert resp.status_code == 200
+        assert block_db.get_verdict(cid) is not None
+        assert block_db.get_override(cid) is not None
+
+    def test_manual_block_accepts_ipfs_cidv0(self, block_client, block_db):
+        cid = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+        resp = block_client.post(
+            "/api/admin/block",
+            headers={**AUTH, "Content-Type": "application/json"},
+            json={"tx_ids": [cid]},
+        )
+        assert resp.status_code == 200
+        assert block_db.get_verdict(cid) is not None
+
     def test_manual_block_requires_auth(self, block_client):
         resp = block_client.post(
             "/api/admin/block",
@@ -804,7 +825,7 @@ class TestManualBlock:
         data = resp.json()
         assert data["succeeded"] == 2
         assert data["failed"] == 1
-        assert data["errors"][0]["error"] == "Invalid TX ID"
+        assert "Invalid ID" in data["errors"][0]["error"]
 
     def test_bulk_block_empty_list(self, block_client):
         resp = block_client.post(

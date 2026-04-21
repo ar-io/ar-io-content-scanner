@@ -15,7 +15,7 @@
   <div class="card" style="margin-bottom: 16px; padding: 16px 24px;">
     <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
       <div style="position: relative; flex: 1; min-width: 200px; max-width: 360px;">
-        <input type="text" x-model="query" @input="onSearch()" placeholder="Search by TX ID or content hash..."
+        <input type="text" x-model="query" @input="onSearch()" placeholder="Search by content ID or hash..."
           style="width: 100%; padding: 8px 12px; border: 1px solid var(--color-gray-light); border-radius: 8px; font-size: 0.85rem; font-family: inherit; box-sizing: border-box;">
       </div>
       <button class="btn btn-outline btn-sm" @click="exportCsv()">Export CSV</button>
@@ -77,7 +77,7 @@
         <thead>
           <tr>
             <th>Scanned At</th>
-            <th>TX ID</th>
+            <th>Content ID</th>
             <th>Verdict</th>
             <th>Rules</th>
             <th>ML Score</th>
@@ -90,6 +90,9 @@
             <tr>
               <td style="white-space: nowrap;" x-text="formatTimestamp(item.scanned_at)"></td>
               <td>
+                <template x-if="idSourceLabel(item.tx_id)">
+                  <span class="id-badge" :class="'id-badge-' + idSource(item.tx_id)" x-text="idSourceLabel(item.tx_id)"></span>
+                </template>
                 <template x-if="txUrl(item.tx_id)">
                   <a :href="txUrl(item.tx_id)" target="_blank" rel="noopener" class="mono" x-text="truncateId(item.tx_id, 16)" :title="item.tx_id" style="color: var(--color-primary); text-decoration: none;" @mouseover="$el.style.textDecoration='underline'" @mouseout="$el.style.textDecoration='none'"></a>
                 </template>

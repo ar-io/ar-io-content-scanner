@@ -183,10 +183,33 @@ async function downloadCsv(path, filename) {
   URL.revokeObjectURL(url);
 }
 
+function isIpfsCid(id) {
+  if (!id) return false;
+  // CIDv1 base32: starts with "baf", longer than a 43-char Arweave ID.
+  if (id.indexOf('baf') === 0 && id.length > 43) return true;
+  // CIDv0: base58btc, always 46 chars starting with "Qm".
+  if (id.indexOf('Qm') === 0 && id.length === 46) return true;
+  return false;
+}
+
+// Returns 'ipfs', 'arweave', or '' (for placeholders like "backfill").
+function idSource(id) {
+  if (!id || id === 'backfill') return '';
+  return isIpfsCid(id) ? 'ipfs' : 'arweave';
+}
+
+function idSourceLabel(id) {
+  var s = idSource(id);
+  if (s === 'ipfs') return 'IPFS';
+  if (s === 'arweave') return 'AR';
+  return '';
+}
+
 function txUrl(txId) {
   if (!window.GATEWAY_PUBLIC_URL || !txId) return '';
   // "backfill" is a placeholder, not a real TX ID
   if (txId === 'backfill') return '';
+  if (isIpfsCid(txId)) return window.GATEWAY_PUBLIC_URL + '/ipfs/' + txId;
   return window.GATEWAY_PUBLIC_URL + '/' + txId;
 }
 
