@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from src.backfill import BackfillScanner
 from src.config import Settings, load_settings
 from src.db import ScannerDB
+from src.edge_cache import EdgeCacheConfig, EdgeCacheRevalidator
 from src.gateway_client import GatewayClient
 from src.logging_config import configure_logging
 from src.metrics import ScanMetrics
@@ -35,11 +36,29 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     db = ScannerDB(settings.db_path)
     metrics = ScanMetrics()
+
+    edge_cache_url_base = (
+        settings.edge_cache_revalidation_url_base
+        or settings.gateway_public_url
+    )
+    edge_cache = EdgeCacheRevalidator(
+        EdgeCacheConfig(
+            enabled=settings.edge_cache_revalidation_enabled,
+            url_base=edge_cache_url_base,
+            headers=settings.edge_cache_revalidation_headers,
+            arweave_paths=settings.edge_cache_revalidation_arweave_paths,
+            ipfs_paths=settings.edge_cache_revalidation_ipfs_paths,
+            timeout_ms=settings.edge_cache_revalidation_timeout_ms,
+        ),
+        metrics=metrics,
+    )
+
     gateway = GatewayClient(
         gateway_url=settings.gateway_url,
         admin_api_key=settings.admin_api_key,
         max_bytes=settings.max_scan_bytes,
         timeout_ms=settings.scan_timeout_ms,
+        edge_cache=edge_cache,
     )
 
     classifier = None

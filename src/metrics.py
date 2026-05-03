@@ -48,6 +48,12 @@ class ScanMetrics:
         self.backfill_malicious_found = 0
         self.backfill_last_sweep_at = 0
         self.backfill_sweeps_completed = 0
+        # Edge-cache revalidation metrics
+        self.edge_cache_revalidations_by_result: dict[str, int] = {
+            "ok": 0,
+            "fail": 0,
+            "disabled": 0,
+        }
 
     def record_scan(self, verdict: Verdict, scan_ms: int) -> None:
         with self._lock:
@@ -133,6 +139,12 @@ class ScanMetrics:
                 self.content_scans_by_scanner[scanner_name] = (
                     self.content_scans_by_scanner.get(scanner_name, 0) + 1
                 )
+
+    def record_edge_cache_revalidation(self, result: str) -> None:
+        with self._lock:
+            if result not in self.edge_cache_revalidations_by_result:
+                self.edge_cache_revalidations_by_result[result] = 0
+            self.edge_cache_revalidations_by_result[result] += 1
 
     def record_backfill_sweep(self, stats: dict) -> None:
         with self._lock:
@@ -426,6 +438,19 @@ class ScanMetrics:
             for name, count in self.content_scans_by_scanner.items():
                 lines.append(
                     f'scanner_content_scans_by_scanner{{scanner="{name}"}} {count}'
+                )
+            lines.append(
+                "# HELP scanner_edge_cache_revalidations_total "
+                "Edge-cache revalidation requests sent after a block "
+                "(result=ok|fail|disabled)"
+            )
+            lines.append(
+                "# TYPE scanner_edge_cache_revalidations_total counter"
+            )
+            for result, count in self.edge_cache_revalidations_by_result.items():
+                lines.append(
+                    f'scanner_edge_cache_revalidations_total'
+                    f'{{result="{result}"}} {count}'
                 )
             lines.append("")
             return "\n".join(lines)

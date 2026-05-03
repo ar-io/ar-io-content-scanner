@@ -9,6 +9,8 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
+from src.edge_cache import parse_headers, parse_paths
+
 
 def _read_pyproject_version() -> str:
     """Read version from pyproject.toml."""
@@ -106,6 +108,27 @@ class Settings:
     backfill_gateway_db_path: str = ""  # gateway's data.db (read-only, for hash→TX ID)
     backfill_rate: int = 5  # max files scanned per second
     backfill_interval_hours: int = 24  # re-sweep interval (0 = one-shot)
+
+    # Edge-cache revalidation: optional best-effort cache busting after a block.
+    # Required for operators who run an HTTP cache (nginx, Varnish, Cloudflare,
+    # Fastly, ...) in front of the gateway: blocking via the admin API only
+    # affects responses served from origin, so the edge can keep serving the
+    # pre-block 200 until its TTL expires. When enabled, the scanner fires one
+    # GET per configured path template at the public URL with cache-bypass
+    # headers, forcing the edge to revalidate against the gateway and pick up
+    # the new 451. Disabled by default since not all gateways have an edge cache.
+    edge_cache_revalidation_enabled: bool = False
+    edge_cache_revalidation_url_base: str = ""  # falls back to gateway_public_url
+    edge_cache_revalidation_headers: tuple[tuple[str, str], ...] = (
+        ("Cache-Control", "no-cache"),
+        ("X-Cache-Bypass", "1"),
+    )
+    edge_cache_revalidation_arweave_paths: tuple[str, ...] = (
+        "/raw/{id}",
+        "/{id}",
+    )
+    edge_cache_revalidation_ipfs_paths: tuple[str, ...] = ("/ipfs/{id}",)
+    edge_cache_revalidation_timeout_ms: int = 5000
 
 
 def load_settings() -> Settings:
@@ -245,6 +268,42 @@ def load_settings() -> Settings:
     if screenshot_timeout_ms < 1000:
         raise ValueError("SCREENSHOT_TIMEOUT_MS must be >= 1000")
 
+    # Edge-cache revalidation
+    edge_cache_revalidation_enabled = (
+        os.environ.get("EDGE_CACHE_REVALIDATION_ENABLED", "false").lower()
+        == "true"
+    )
+    edge_cache_revalidation_url_base = os.environ.get(
+        "EDGE_CACHE_REVALIDATION_URL_BASE", ""
+    ).rstrip("/")
+    edge_cache_revalidation_headers_raw = os.environ.get(
+        "EDGE_CACHE_REVALIDATION_HEADERS",
+        "Cache-Control: no-cache, X-Cache-Bypass: 1",
+    )
+    edge_cache_revalidation_headers = parse_headers(
+        edge_cache_revalidation_headers_raw
+    )
+    edge_cache_revalidation_arweave_paths = parse_paths(
+        os.environ.get("EDGE_CACHE_REVALIDATION_PATHS_ARWEAVE", "/raw/{id},/{id}")
+    )
+    edge_cache_revalidation_ipfs_paths = parse_paths(
+        os.environ.get("EDGE_CACHE_REVALIDATION_PATHS_IPFS", "/ipfs/{id}")
+    )
+    edge_cache_revalidation_timeout_ms = int(
+        os.environ.get("EDGE_CACHE_REVALIDATION_TIMEOUT_MS", "5000")
+    )
+    if edge_cache_revalidation_timeout_ms < 100:
+        raise ValueError("EDGE_CACHE_REVALIDATION_TIMEOUT_MS must be >= 100")
+    if (
+        edge_cache_revalidation_enabled
+        and not edge_cache_revalidation_url_base
+        and not os.environ.get("GATEWAY_PUBLIC_URL")
+    ):
+        raise ValueError(
+            "EDGE_CACHE_REVALIDATION_URL_BASE (or GATEWAY_PUBLIC_URL fallback) "
+            "is required when EDGE_CACHE_REVALIDATION_ENABLED=true"
+        )
+
     return Settings(
         gateway_url=gateway_url.rstrip("/"),
         admin_api_key=admin_api_key,
@@ -311,4 +370,10 @@ def load_settings() -> Settings:
         backfill_interval_hours=int(
             os.environ.get("BACKFILL_INTERVAL_HOURS", "24")
         ),
+        edge_cache_revalidation_enabled=edge_cache_revalidation_enabled,
+        edge_cache_revalidation_url_base=edge_cache_revalidation_url_base,
+        edge_cache_revalidation_headers=edge_cache_revalidation_headers,
+        edge_cache_revalidation_arweave_paths=edge_cache_revalidation_arweave_paths,
+        edge_cache_revalidation_ipfs_paths=edge_cache_revalidation_ipfs_paths,
+        edge_cache_revalidation_timeout_ms=edge_cache_revalidation_timeout_ms,
     )
