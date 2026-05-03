@@ -5,6 +5,7 @@ import logging
 
 import httpx
 
+from src.edge_cache import EdgeCacheRevalidator
 from src.ipfs import gateway_fetch_path
 
 logger = logging.getLogger("scanner.gateway")
@@ -17,10 +18,12 @@ class GatewayClient:
         admin_api_key: str,
         max_bytes: int = 262144,
         timeout_ms: int = 10000,
+        edge_cache: EdgeCacheRevalidator | None = None,
     ):
         self.gateway_url = gateway_url
         self.admin_api_key = admin_api_key
         self.max_bytes = max_bytes
+        self.edge_cache = edge_cache
         timeout = httpx.Timeout(timeout_ms / 1000)
         self._client = httpx.AsyncClient(
             base_url=gateway_url, timeout=timeout
@@ -95,6 +98,8 @@ class GatewayClient:
                             "gateway_response": resp.status_code,
                         },
                     )
+                    if self.edge_cache is not None:
+                        await self.edge_cache.revalidate(tx_id)
                     return True
                 logger.error(
                     "block_failed",
@@ -148,6 +153,8 @@ class GatewayClient:
                             "gateway_response": resp.status_code,
                         },
                     )
+                    if self.edge_cache is not None:
+                        await self.edge_cache.revalidate(tx_id)
                     return True
                 logger.error(
                     "unblock_failed",
@@ -173,3 +180,5 @@ class GatewayClient:
 
     async def close(self) -> None:
         await self._client.aclose()
+        if self.edge_cache is not None:
+            await self.edge_cache.close()
