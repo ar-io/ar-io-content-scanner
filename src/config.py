@@ -273,21 +273,23 @@ def load_settings() -> Settings:
         os.environ.get("EDGE_CACHE_REVALIDATION_ENABLED", "false").lower()
         == "true"
     )
-    edge_cache_revalidation_url_base = os.environ.get(
-        "EDGE_CACHE_REVALIDATION_URL_BASE", ""
+    # `or DEFAULT` (not `os.environ.get(.., DEFAULT)`) so an explicitly-empty
+    # env var (common when docker compose forwards an unset host var as "")
+    # falls back to the default rather than disabling the feature silently.
+    edge_cache_revalidation_url_base = (
+        os.environ.get("EDGE_CACHE_REVALIDATION_URL_BASE") or ""
     ).rstrip("/")
-    edge_cache_revalidation_headers_raw = os.environ.get(
-        "EDGE_CACHE_REVALIDATION_HEADERS",
-        "Cache-Control: no-cache, X-Cache-Bypass: 1",
-    )
     edge_cache_revalidation_headers = parse_headers(
-        edge_cache_revalidation_headers_raw
+        os.environ.get("EDGE_CACHE_REVALIDATION_HEADERS")
+        or "Cache-Control: no-cache, X-Cache-Bypass: 1"
     )
     edge_cache_revalidation_arweave_paths = parse_paths(
-        os.environ.get("EDGE_CACHE_REVALIDATION_PATHS_ARWEAVE", "/raw/{id},/{id}")
+        os.environ.get("EDGE_CACHE_REVALIDATION_PATHS_ARWEAVE")
+        or "/raw/{id},/{id}"
     )
     edge_cache_revalidation_ipfs_paths = parse_paths(
-        os.environ.get("EDGE_CACHE_REVALIDATION_PATHS_IPFS", "/ipfs/{id}")
+        os.environ.get("EDGE_CACHE_REVALIDATION_PATHS_IPFS")
+        or "/ipfs/{id}"
     )
     edge_cache_revalidation_timeout_ms = int(
         os.environ.get("EDGE_CACHE_REVALIDATION_TIMEOUT_MS", "5000")
