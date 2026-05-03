@@ -65,6 +65,36 @@ def test_parse_paths_strips_and_drops_empty() -> None:
     assert parse_paths("/raw/{id}, , /{id}  ") == ("/raw/{id}", "/{id}")
 
 
+def test_load_settings_empty_env_uses_defaults(monkeypatch) -> None:
+    """Docker compose forwards unset host vars as empty strings; we must
+    treat empty exactly like missing so the defaults still apply.
+    """
+    from src.config import load_settings
+
+    monkeypatch.setenv("GATEWAY_URL", "http://core:4000")
+    monkeypatch.setenv("ADMIN_API_KEY", "k")
+    monkeypatch.setenv("ADMIN_UI_ENABLED", "false")
+    monkeypatch.setenv("EDGE_CACHE_REVALIDATION_ENABLED", "true")
+    monkeypatch.setenv("GATEWAY_PUBLIC_URL", "https://example.test")
+    # Explicitly empty -- mimics docker compose `${X:-}` forwarding
+    monkeypatch.setenv("EDGE_CACHE_REVALIDATION_HEADERS", "")
+    monkeypatch.setenv("EDGE_CACHE_REVALIDATION_PATHS_ARWEAVE", "")
+    monkeypatch.setenv("EDGE_CACHE_REVALIDATION_PATHS_IPFS", "")
+    monkeypatch.setenv("EDGE_CACHE_REVALIDATION_URL_BASE", "")
+
+    settings = load_settings()
+    assert settings.edge_cache_revalidation_enabled is True
+    assert settings.edge_cache_revalidation_headers == (
+        ("Cache-Control", "no-cache"),
+        ("X-Cache-Bypass", "1"),
+    )
+    assert settings.edge_cache_revalidation_arweave_paths == (
+        "/raw/{id}",
+        "/{id}",
+    )
+    assert settings.edge_cache_revalidation_ipfs_paths == ("/ipfs/{id}",)
+
+
 # ---- EdgeCacheRevalidator ----
 
 async def test_disabled_makes_no_requests() -> None:
