@@ -201,6 +201,16 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `SAFE_BROWSING_CHECK_INTERVAL` | No | `3600` | Seconds between periodic domain + URL monitoring (min 60) |
 | `RENDERED_DOM_SCAN_ENABLED` | No | `true` | Two-pass rendered DOM scan for JS-rendered phishing (uses Playwright) |
 | `SCANNER_EXAMPLE_IMAGE` | No | `false` | Enable example image scanner (stub, for development/testing) |
+| `EDGE_CACHE_REVALIDATION_ENABLED` | No | `false` | Fire one revalidation request per blocked id at the public gateway URL after a `block-data` succeeds, so an HTTP cache (nginx/Varnish/Cloudflare/Fastly) in front of the gateway picks up the new 451 instead of serving its stale 200 until TTL |
+| `EDGE_CACHE_REVALIDATION_URL_BASE` | No | falls back to `GATEWAY_PUBLIC_URL` | Public origin to send the revalidation request to (e.g., `https://vilenarios.com`) |
+| `EDGE_CACHE_REVALIDATION_HEADERS` | No | `Cache-Control: no-cache, X-Cache-Bypass: 1` | Comma-separated `Header: value` pairs added to revalidation requests |
+| `EDGE_CACHE_REVALIDATION_PATHS_ARWEAVE` | No | `/raw/{id},/{id}` | Comma-separated path templates used per Arweave block (`{id}` is substituted) |
+| `EDGE_CACHE_REVALIDATION_PATHS_IPFS` | No | `/ipfs/{id}` | Comma-separated path templates used per IPFS block |
+| `EDGE_CACHE_REVALIDATION_TIMEOUT_MS` | No | `5000` | Per-request timeout for revalidation calls |
+
+### Edge-cache revalidation
+
+Operators who run an HTTP cache in front of the gateway face a window where a malicious response can be cached at the edge before the scanner blocks it — the gateway will return 451 from then on, but the edge keeps serving the cached 200 until its TTL expires. Setting `EDGE_CACHE_REVALIDATION_ENABLED=true` makes the scanner fire one GET per configured path template after every successful `block-data` (and `unblock-data`) call. The defaults work for nginx setups that honor `X-Cache-Bypass` via `proxy_cache_bypass $http_x_cache_bypass`. Other edges may need different headers — Cloudflare ignores client `Cache-Control` from arbitrary IPs and needs its own purge API; Varnish/Fastly typically honor `Cache-Control: no-cache` from origin-pull contexts. Revalidation failures are logged and counted (`scanner_edge_cache_revalidations_total{result="fail"}`) but never block or retry the underlying `block-data` call. Multi-tier caches (CDN → reverse proxy → origin) are out of scope: the revalidation hit only invalidates whichever edge it reaches.
 
 ## Admin Dashboard
 
