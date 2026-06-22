@@ -10,7 +10,9 @@ from src.ml.classifier import PhishingClassifier
 from src.ml.features import extract_features
 from src.models import ScanResult, Verdict
 from src.rules.base import Rule
+from src.rules.credential_kit import CredentialKitRule
 from src.rules.external_form import ExternalFormRule
+from src.rules.fake_challenge import FakeChallengeRule
 from src.rules.obfuscated_loader import ObfuscatedLoaderRule
 from src.rules.seed_phrase import SeedPhraseRule
 from src.rules.wallet_impersonation import WalletImpersonationRule
@@ -36,6 +38,10 @@ class RuleEngine:
             self.rules.append(WalletImpersonationRule())
         if settings.rule_obfuscated_loader:
             self.rules.append(ObfuscatedLoaderRule())
+        if settings.rule_fake_challenge:
+            self.rules.append(FakeChallengeRule())
+        if settings.rule_credential_kit:
+            self.rules.append(CredentialKitRule())
 
         logger.info(
             "Rule engine initialized",

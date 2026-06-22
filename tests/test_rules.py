@@ -1,7 +1,9 @@
 """Tests for individual rule modules."""
 
 from src.ml.features import parse_html
+from src.rules.credential_kit import CredentialKitRule
 from src.rules.external_form import ExternalFormRule
+from src.rules.fake_challenge import FakeChallengeRule
 from src.rules.obfuscated_loader import ObfuscatedLoaderRule
 from src.rules.seed_phrase import SeedPhraseRule
 from src.rules.wallet_impersonation import WalletImpersonationRule
@@ -638,3 +640,98 @@ class TestObfuscatedLoaderRule:
         result = self.rule.evaluate(html, soup)
         assert result.triggered is False
         assert result.signals["is_bundler"] is True
+
+
+# Representative kit samples (anchored on strings observed in live captures).
+
+FAKE_CHALLENGE_BOTNET = """<html><head><title>www.office.com</title></head>
+<body><h1>www.office.com</h1>
+<p>Checking if the site connection is secure</p>
+<p>www.office.com needs to review the security of your connection before proceeding.</p>
+<div>Did you know the first botnet in 2003 took over 500-1000 devices? Today,
+botnets take over millions of devices at once.</div></body></html>"""
+
+FAKE_CHALLENGE_BROWSER_CHECK = """<html><head><title>Just a moment...</title></head>
+<body><p>Browser check in progress... Verifying</p>
+<p>It seems we've detected unusual traffic from your network. This page will
+help confirm that you're not a robot.</p></body></html>"""
+
+# A genuinely-archived real Cloudflare page shares one phrase but has no
+# corroborating kit signal — must NOT trigger.
+REAL_CF_LOOKALIKE = """<html><head><title>Just a moment...</title></head>
+<body><p>Checking if the site connection is secure</p>
+<p>example.com</p></body></html>"""
+
+WEBMAIL_PORTAL_KIT = """<html><head><title>Webmail Portal Access</title></head>
+<body><h2>Webmail Portal Access</h2>
+<form><input type="password" name="pass"></form>
+<p>Invalid Password.! Please Enter your correct Password</p>
+<p>That account doesn't exist. Enter a different account</p></body></html>"""
+
+LOADING_MAIL_SETTINGS_KIT = """<html><head><title></title></head>
+<body><img src="logo.png"><div>loading mail settings ...</div>
+<progress value="40" max="100"></progress></body></html>"""
+
+# Mentions a brand phrase but no credential context — must NOT trigger.
+BENIGN_BRAND_MENTION = """<html><head><title>How webmail works</title></head>
+<body><article>This blog post explains webmail portal access concepts for
+new administrators. No login form here.</article></body></html>"""
+
+
+class TestFakeChallengeRule:
+    def setup_method(self):
+        self.rule = FakeChallengeRule()
+
+    def test_triggers_on_botnet_trivia_cloak(self):
+        soup = parse_html(FAKE_CHALLENGE_BOTNET)
+        result = self.rule.evaluate(FAKE_CHALLENGE_BOTNET, soup)
+        assert result.triggered is True
+
+    def test_triggers_on_review_security_phrase(self):
+        html = """<html><body>acme.io needs to review the security of your
+        connection before proceeding.</body></html>"""
+        soup = parse_html(html)
+        assert self.rule.evaluate(html, soup).triggered is True
+
+    def test_triggers_on_browser_check_with_corroborator(self):
+        soup = parse_html(FAKE_CHALLENGE_BROWSER_CHECK)
+        result = self.rule.evaluate(FAKE_CHALLENGE_BROWSER_CHECK, soup)
+        assert result.triggered is True
+
+    def test_real_cf_lookalike_does_not_trigger(self):
+        """A single generic cloak phrase with no corroborator must not block."""
+        soup = parse_html(REAL_CF_LOOKALIKE)
+        assert self.rule.evaluate(REAL_CF_LOOKALIKE, soup).triggered is False
+
+    def test_clean_page_does_not_trigger(self):
+        soup = parse_html(CLEAN_HTML)
+        assert self.rule.evaluate(CLEAN_HTML, soup).triggered is False
+
+
+class TestCredentialKitRule:
+    def setup_method(self):
+        self.rule = CredentialKitRule()
+
+    def test_triggers_on_webmail_portal(self):
+        soup = parse_html(WEBMAIL_PORTAL_KIT)
+        result = self.rule.evaluate(WEBMAIL_PORTAL_KIT, soup)
+        assert result.triggered is True
+        assert "webmail-portal-access" in result.signals["matched_signatures"]
+
+    def test_triggers_on_invalid_password_prompt(self):
+        html = """<html><body>Invalid Password.! Please Enter your correct
+        Password</body></html>"""
+        soup = parse_html(html)
+        assert self.rule.evaluate(html, soup).triggered is True
+
+    def test_triggers_on_loading_mail_settings(self):
+        soup = parse_html(LOADING_MAIL_SETTINGS_KIT)
+        assert self.rule.evaluate(LOADING_MAIL_SETTINGS_KIT, soup).triggered is True
+
+    def test_brand_mention_without_credential_context_does_not_trigger(self):
+        soup = parse_html(BENIGN_BRAND_MENTION)
+        assert self.rule.evaluate(BENIGN_BRAND_MENTION, soup).triggered is False
+
+    def test_clean_page_does_not_trigger(self):
+        soup = parse_html(CLEAN_HTML)
+        assert self.rule.evaluate(CLEAN_HTML, soup).triggered is False
