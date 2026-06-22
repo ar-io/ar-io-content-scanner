@@ -58,6 +58,20 @@ class CredentialKitRule(Rule):
         if "zimbra web client sign in" in blob and has_pw:
             signatures.append("zimbra-login-clone")
 
+        # Office365 / Outlook "Sign in to your account" redirector kit: the
+        # visible form is injected client-side (so has_password is often False),
+        # but it carries a Microsoft-login brand reference AND hand-rolled JS
+        # obfuscation (atob/eval/fromCharCode) that real Microsoft login pages
+        # do not use — that pairing is the near-zero-FP anchor.
+        low_html = html.lower()
+        o365_brand = any(
+            b in low_html
+            for b in ("office365", "outlook", "msftauth", "login.microsoftonline")
+        )
+        obfuscated = bool(re.search(r"atob\(|eval\(|fromcharcode", low_html))
+        if "sign in to your account" in blob and o365_brand and obfuscated:
+            signatures.append("o365-signin-redirector")
+
         return RuleResult(
             rule_name=self.name,
             triggered=bool(signatures),
