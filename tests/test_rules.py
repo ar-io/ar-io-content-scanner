@@ -735,3 +735,22 @@ class TestCredentialKitRule:
     def test_clean_page_does_not_trigger(self):
         soup = parse_html(CLEAN_HTML)
         assert self.rule.evaluate(CLEAN_HTML, soup).triggered is False
+
+    def test_triggers_on_o365_redirector(self):
+        html = """<html><head><title>Sign in to your account</title></head>
+        <body><p>Sign in to your account</p>
+        <script>var u="https://login.microsoftonline.com/outlook";
+        eval(atob("ZG9jdW1lbnQ="));window.location.href=u;</script></body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is True
+        assert "o365-signin-redirector" in result.signals["matched_signatures"]
+
+    def test_signin_without_brand_or_obfuscation_does_not_trigger(self):
+        """A bare 'Sign in to your account' page (real MS-login archive) without
+        hand-rolled obfuscation must not block."""
+        html = """<html><head><title>Sign in to your account</title></head>
+        <body><p>Sign in to your account</p>
+        <a href="https://login.microsoftonline.com/outlook">continue</a></body></html>"""
+        soup = parse_html(html)
+        assert self.rule.evaluate(html, soup).triggered is False
