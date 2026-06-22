@@ -86,6 +86,8 @@ class TestRuleEngine:
             rule_external_credential_form=False,
             rule_wallet_impersonation=False,
             rule_obfuscated_loader=False,
+            rule_fake_challenge=False,
+            rule_credential_kit=False,
         )
         engine = RuleEngine(settings, classifier=None)
         assert len(engine.rules) == 0

@@ -58,6 +58,8 @@ class Settings:
     rule_external_credential_form: bool = True
     rule_wallet_impersonation: bool = True
     rule_obfuscated_loader: bool = True
+    rule_fake_challenge: bool = True
+    rule_credential_kit: bool = True
 
     # Content scanner toggles
     scanner_example_image: bool = False
@@ -333,6 +335,10 @@ def load_settings() -> Settings:
         rule_obfuscated_loader=os.environ.get(
             "RULE_OBFUSCATED_LOADER", "true"
         ).lower()
+        == "true",
+        rule_fake_challenge=os.environ.get("RULE_FAKE_CHALLENGE", "true").lower()
+        == "true",
+        rule_credential_kit=os.environ.get("RULE_CREDENTIAL_KIT", "true").lower()
         == "true",
         scanner_example_image=os.environ.get(
             "SCANNER_EXAMPLE_IMAGE", "false"
