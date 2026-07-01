@@ -7,6 +7,7 @@ import logging
 import time
 from urllib.parse import parse_qs
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -210,8 +211,6 @@ async def _update_message_with_status(
             updated_blocks.append(block)
 
     try:
-        import httpx
-
         async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
             await client.post(
                 response_url,
