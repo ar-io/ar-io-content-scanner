@@ -36,6 +36,12 @@ try:
 except ImportError:
     ScanDispatcher = None  # type: ignore[assignment,misc]
 
+# Optional notification router import
+try:
+    from src.notifications.router import NotificationRouter
+except ImportError:
+    NotificationRouter = None  # type: ignore[assignment,misc]
+
 logger = logging.getLogger("scanner.core")
 
 # DOM manipulation patterns that indicate JS will modify page structure.
@@ -140,6 +146,7 @@ class Scanner:
         feed_client: FeedClient | None = None,
         safe_browsing: SafeBrowsingClient | None = None,
         dispatcher: ScanDispatcher | None = None,
+        notifier: NotificationRouter | None = None,
     ):
         self.settings = settings
         self.db = db
@@ -150,6 +157,7 @@ class Scanner:
         self.feed_client = feed_client
         self.safe_browsing = safe_browsing
         self.dispatcher = dispatcher
+        self.notifier = notifier
 
     async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
         try:
@@ -717,3 +725,31 @@ class Scanner:
                 "action": action,
             },
         )
+
+        # Send notifications (after verdict saved, action taken, screenshot captured)
+        if (
+            self.notifier
+            and content_hash
+            and result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
+        ):
+            screenshot_path = None
+            if self.screenshot:
+                ss_path = self.screenshot.get_path(content_hash)
+                if ss_path is not None:
+                    screenshot_path = str(ss_path)
+            try:
+                await self.notifier.notify(
+                    verdict=result.verdict.value,
+                    tx_id=tx_id,
+                    content_hash=content_hash,
+                    matched_rules=result.matched_rules,
+                    ml_score=result.ml_score,
+                    screenshot_path=screenshot_path,
+                    action_taken=action,
+                )
+            except Exception:
+                logger.warning(
+                    "notification_failed",
+                    extra={"tx_id": tx_id},
+                    exc_info=True,
+                )

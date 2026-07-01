@@ -132,6 +132,13 @@ class Settings:
     edge_cache_revalidation_ipfs_paths: tuple[str, ...] = ("/ipfs/{id}",)
     edge_cache_revalidation_timeout_ms: int = 5000
 
+    # Slack notifications
+    slack_enabled: bool = False
+    slack_bot_token: str = ""
+    slack_channel_id: str = ""
+    slack_signing_secret: str = ""
+    slack_notification_threshold: str = "malicious"  # or "suspicious"
+
 
 def load_settings() -> Settings:
     gateway_url = os.environ.get("GATEWAY_URL")
@@ -308,6 +315,34 @@ def load_settings() -> Settings:
             "is required when EDGE_CACHE_REVALIDATION_ENABLED=true"
         )
 
+    # Slack notification settings
+    slack_enabled = (
+        os.environ.get("SLACK_ENABLED", "false").lower() == "true"
+    )
+    slack_bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
+    slack_channel_id = os.environ.get("SLACK_CHANNEL_ID", "")
+    slack_signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+    slack_notification_threshold = os.environ.get(
+        "SLACK_NOTIFICATION_THRESHOLD", "malicious"
+    )
+    if slack_notification_threshold not in ("malicious", "suspicious"):
+        raise ValueError(
+            "SLACK_NOTIFICATION_THRESHOLD must be 'malicious' or 'suspicious'"
+        )
+    if slack_enabled and not slack_bot_token:
+        raise ValueError(
+            "SLACK_BOT_TOKEN is required when SLACK_ENABLED=true"
+        )
+    if slack_enabled and not slack_channel_id:
+        raise ValueError(
+            "SLACK_CHANNEL_ID is required when SLACK_ENABLED=true"
+        )
+    if slack_enabled and not slack_signing_secret:
+        raise ValueError(
+            "SLACK_SIGNING_SECRET is required when SLACK_ENABLED=true "
+            "(needed to verify Slack button callbacks)"
+        )
+
     return Settings(
         gateway_url=gateway_url.rstrip("/"),
         admin_api_key=admin_api_key,
@@ -384,4 +419,9 @@ def load_settings() -> Settings:
         edge_cache_revalidation_arweave_paths=edge_cache_revalidation_arweave_paths,
         edge_cache_revalidation_ipfs_paths=edge_cache_revalidation_ipfs_paths,
         edge_cache_revalidation_timeout_ms=edge_cache_revalidation_timeout_ms,
+        slack_enabled=slack_enabled,
+        slack_bot_token=slack_bot_token,
+        slack_channel_id=slack_channel_id,
+        slack_signing_secret=slack_signing_secret,
+        slack_notification_threshold=slack_notification_threshold,
     )

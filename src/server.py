@@ -19,6 +19,8 @@ from src.ml.classifier import PhishingClassifier
 from src.models import WebhookPayload
 from src.rules.engine import RuleEngine
 from src.safe_browsing import SafeBrowsingClient
+from src.notifications.router import NotificationRouter
+from src.notifications.slack import SlackNotifier
 from src.scanner import Scanner
 from src.scanners.dispatcher import ScanDispatcher
 from src.scanners.registry import ContentScannerRegistry
@@ -87,6 +89,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             timeout_ms=settings.screenshot_timeout_ms,
         )
 
+    # Slack notifications
+    notifier = None
+    slack_notifier = None
+    if settings.slack_enabled:
+        slack_notifier = SlackNotifier(
+            bot_token=settings.slack_bot_token,
+            channel_id=settings.slack_channel_id,
+            gateway_public_url=settings.gateway_public_url,
+        )
+        notifier = NotificationRouter(
+            slack=slack_notifier,
+            threshold=settings.slack_notification_threshold,
+        )
+
     # Verdict feed components
     feed_client = None
     feed_poller = None
@@ -116,6 +132,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         screenshot=screenshot, feed_client=feed_client,
         safe_browsing=safe_browsing,
         dispatcher=dispatcher,
+        notifier=notifier,
     )
 
     backfill = None
@@ -164,6 +181,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "safe_browsing_api_key": bool(settings.safe_browsing_api_key),
                 "content_scanners": registry.scanner_names,
                 "webhook_events": sorted(settings.webhook_events),
+                "slack_notifications": settings.slack_enabled,
             },
         )
         yield
@@ -175,6 +193,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         await safe_browsing.close()
         if feed_client:
             await feed_client.close()
+        if notifier:
+            await notifier.close()
         if screenshot:
             await screenshot.shutdown()
         await gateway.close()
@@ -199,6 +219,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         from src.feed.routes import build_feed_router
 
         app.include_router(build_feed_router(app.state))
+
+    # Mount Slack actions endpoint if Slack is enabled
+    if settings.slack_enabled and settings.slack_signing_secret:
+        from src.admin.slack_actions import build_slack_actions_router
+
+        app.include_router(build_slack_actions_router(app.state))
 
     # Mount admin UI if enabled
     if settings.admin_ui_enabled:

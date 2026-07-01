@@ -189,54 +189,25 @@ def build_admin_router(app_state) -> APIRouter:
         if not _HASH_PATTERN.match(content_hash):
             raise HTTPException(status_code=400, detail="Invalid content hash")
 
-        db = _state.db
-        verdict = db.get_verdict(content_hash)
-        if verdict is None:
-            raise HTTPException(status_code=404, detail="Not found")
-
         body = await request.json() if await request.body() else {}
         notes = str(body.get("notes", ""))[:500]
 
-        db.save_override(
+        from src.admin.actions import confirm_block
+
+        result = await confirm_block(
             content_hash=content_hash,
-            tx_id=verdict.tx_id,
-            admin_verdict="confirmed_malicious",
-            original_verdict=verdict.verdict.value,
-            original_rules=verdict.matched_rules or "[]",
-            original_ml_score=verdict.ml_score,
+            db=_state.db,
+            gateway=_state.gateway,
+            scanner_mode=settings.scanner_mode,
             notes=notes,
         )
-
-        # Update verdict to MALICIOUS for consistency with dismiss
-        # (which updates to CLEAN). Ensures history/export/dashboard
-        # reflect the admin's decision.
-        if verdict.verdict != Verdict.MALICIOUS:
-            db.update_verdict(content_hash, Verdict.MALICIOUS)
-
-        blocked_tx_ids = []
-        if settings.scanner_mode == "enforce":
-            gateway = _state.gateway
-            rules = json.loads(verdict.matched_rules or "[]")
-            success = await gateway.block_data(
-                verdict.tx_id, content_hash, rules
-            )
-            if success:
-                blocked_tx_ids.append(verdict.tx_id)
-                db.mark_blocked(content_hash)
-
-        logger.info(
-            "admin_confirm",
-            extra={
-                "content_hash": content_hash,
-                "tx_id": verdict.tx_id,
-                "blocked": len(blocked_tx_ids) > 0,
-            },
-        )
+        if not result.success:
+            raise HTTPException(status_code=404, detail=result.message)
 
         return {
             "status": "confirmed",
-            "blocked": len(blocked_tx_ids) > 0,
-            "blocked_tx_ids": blocked_tx_ids,
+            "blocked": result.blocked,
+            "blocked_tx_ids": [_state.db.get_verdict(content_hash).tx_id] if result.blocked else [],
         }
 
     @router.post("/api/admin/review/{content_hash}/dismiss")
@@ -248,46 +219,25 @@ def build_admin_router(app_state) -> APIRouter:
         if not _HASH_PATTERN.match(content_hash):
             raise HTTPException(status_code=400, detail="Invalid content hash")
 
-        db = _state.db
-        verdict = db.get_verdict(content_hash)
-        if verdict is None:
-            raise HTTPException(status_code=404, detail="Not found")
-
         body = await request.json() if await request.body() else {}
         notes = str(body.get("notes", ""))[:500]
 
-        db.save_override(
+        from src.admin.actions import dismiss_false_positive
+
+        result = await dismiss_false_positive(
             content_hash=content_hash,
-            tx_id=verdict.tx_id,
-            admin_verdict="confirmed_clean",
-            original_verdict=verdict.verdict.value,
-            original_rules=verdict.matched_rules or "[]",
-            original_ml_score=verdict.ml_score,
+            db=_state.db,
+            gateway=_state.gateway,
+            scanner_mode=settings.scanner_mode,
             notes=notes,
         )
+        if not result.success:
+            raise HTTPException(status_code=404, detail=result.message)
 
-        db.update_verdict(content_hash, Verdict.CLEAN)
-        db.mark_unblocked(content_hash)
-
-        # In enforce mode, unblock content that was previously blocked
-        unblocked = None
-        if settings.scanner_mode == "enforce":
-            gateway = _state.gateway
-            unblocked = await gateway.unblock_data(verdict.tx_id, content_hash)
-
-        logger.info(
-            "admin_dismiss",
-            extra={
-                "content_hash": content_hash,
-                "tx_id": verdict.tx_id,
-                **({"unblocked": unblocked} if unblocked is not None else {}),
-            },
-        )
-
-        result: dict = {"status": "dismissed"}
-        if unblocked is not None:
-            result["unblocked"] = unblocked
-        return result
+        response: dict = {"status": "dismissed"}
+        if result.unblocked:
+            response["unblocked"] = True
+        return response
 
     @router.post("/api/admin/bulk/confirm")
     async def bulk_confirm(
