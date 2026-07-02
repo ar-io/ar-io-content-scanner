@@ -1,0 +1,277 @@
+"""Microsoft 365 email poller for abuse report intake.
+
+Polls a Microsoft 365 mailbox via the Graph API for unread abuse reports,
+extracts Arweave TX IDs, enqueues them for scanning, and marks emails as read.
+
+Uses OAuth2 client credentials flow (app-only, no user login). Requires an
+Azure AD app registration with ``Mail.ReadWrite`` application permission.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+
+import httpx
+
+from src.db import ScannerDB
+from src.email.tx_extractor import extract_all_tx_ids
+from src.notifications.router import NotificationRouter
+
+logger = logging.getLogger("scanner.email")
+
+_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+_TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+
+
+class M365EmailPoller:
+    """Polls an M365 mailbox for unread abuse reports and enqueues TX IDs.
+
+    Designed to run as a background asyncio task alongside the scanner's
+    worker pool. Fail-open: Graph API errors are logged but never affect
+    the scanning pipeline.
+    """
+
+    def __init__(
+        self,
+        tenant_id: str,
+        client_id: str,
+        client_secret: str,
+        mailbox: str,
+        poll_interval: int,
+        db: ScannerDB,
+        notifier: NotificationRouter | None = None,
+    ):
+        self.tenant_id = tenant_id
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.mailbox = mailbox
+        self.poll_interval = poll_interval
+        self.db = db
+        self.notifier = notifier
+
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+        self._task: asyncio.Task | None = None
+        self._running = False
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        """Start the background polling loop."""
+        self._running = True
+        self._task = asyncio.create_task(
+            self._poll_loop(), name="email-poller"
+        )
+        logger.info(
+            "Email poller started",
+            extra={
+                "mailbox": self.mailbox,
+                "poll_interval": self.poll_interval,
+            },
+        )
+
+    async def stop(self) -> None:
+        """Stop the background polling loop and close the HTTP client."""
+        self._running = False
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        await self._client.aclose()
+        logger.info("Email poller stopped")
+
+    # ------------------------------------------------------------------
+    # Polling loop
+    # ------------------------------------------------------------------
+
+    async def _poll_loop(self) -> None:
+        # Let the scanner initialize first
+        await asyncio.sleep(5)
+
+        while self._running:
+            try:
+                await self._poll_once()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Email poll error")
+
+            try:
+                await asyncio.sleep(self.poll_interval)
+            except asyncio.CancelledError:
+                break
+
+    async def _poll_once(self) -> None:
+        """Fetch unread emails, extract TX IDs, enqueue, and mark read."""
+        token = await self._get_access_token()
+        if token is None:
+            return
+
+        messages = await self._fetch_unread_emails(token)
+        if not messages:
+            return
+
+        logger.info(
+            "Processing abuse emails",
+            extra={"count": len(messages)},
+        )
+
+        for msg in messages:
+            msg_id = msg.get("id", "")
+            sender = (
+                msg.get("from", {})
+                .get("emailAddress", {})
+                .get("address", "unknown")
+            )
+            subject = msg.get("subject", "(no subject)")
+            text_body = msg.get("body", {}).get("content", "") if msg.get("body", {}).get("contentType") == "text" else ""
+            # Graph API returns body in the requested format; we request both
+            # by fetching the message with body in text and also uniqueBody.
+            # For simplicity, treat the body content as potentially HTML.
+            html_body = msg.get("body", {}).get("content", "") if msg.get("body", {}).get("contentType") == "html" else ""
+
+            # If we only got one format, use it for both to maximize extraction
+            if not text_body and not html_body:
+                # Fallback: use whatever content is there
+                text_body = msg.get("body", {}).get("content", "")
+
+            tx_ids = extract_all_tx_ids(text_body, html_body)
+
+            enqueued = 0
+            for tx_id in tx_ids:
+                if self.db.enqueue(
+                    tx_id=tx_id,
+                    content_hash=None,
+                    content_type=None,
+                    data_size=None,
+                ):
+                    enqueued += 1
+
+            logger.info(
+                "Processed abuse email",
+                extra={
+                    "sender": sender,
+                    "subject": subject,
+                    "tx_ids_found": len(tx_ids),
+                    "tx_ids_enqueued": enqueued,
+                    "message_id": msg_id,
+                },
+            )
+
+            # Slack notification summary
+            if self.notifier and self.notifier.slack and tx_ids:
+                try:
+                    tx_list = ", ".join(tx_ids[:20])
+                    if len(tx_ids) > 20:
+                        tx_list += f" ... and {len(tx_ids) - 20} more"
+                    await self.notifier.slack._client.post(
+                        "https://slack.com/api/chat.postMessage",
+                        json={
+                            "channel": self.notifier.slack.channel_id,
+                            "text": (
+                                f"*Email abuse report processed*\n"
+                                f"From: {sender}\n"
+                                f"Subject: {subject}\n"
+                                f"TX IDs found: {len(tx_ids)} "
+                                f"(enqueued: {enqueued})\n"
+                                f"```{tx_list}```"
+                            ),
+                        },
+                    )
+                except Exception:
+                    logger.error(
+                        "Failed to send email intake Slack notification",
+                        exc_info=True,
+                    )
+
+            # Mark as read
+            await self._mark_as_read(token, msg_id)
+
+    # ------------------------------------------------------------------
+    # Graph API helpers
+    # ------------------------------------------------------------------
+
+    async def _get_access_token(self) -> str | None:
+        """Acquire an OAuth2 access token via client credentials flow."""
+        url = _TOKEN_URL_TEMPLATE.format(tenant_id=self.tenant_id)
+        try:
+            resp = await self._client.post(
+                url,
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "scope": "https://graph.microsoft.com/.default",
+                },
+            )
+            if resp.status_code != 200:
+                logger.error(
+                    "Failed to acquire Graph API token",
+                    extra={
+                        "status": resp.status_code,
+                        "body": resp.text[:500],
+                    },
+                )
+                return None
+            return resp.json().get("access_token")
+        except Exception:
+            logger.exception("Error acquiring Graph API token")
+            return None
+
+    async def _fetch_unread_emails(self, token: str) -> list[dict]:
+        """Fetch unread emails from the mailbox via Graph API."""
+        url = f"{_GRAPH_BASE}/users/{self.mailbox}/messages"
+        try:
+            resp = await self._client.get(
+                url,
+                params={
+                    "$filter": "isRead eq false",
+                    "$orderby": "receivedDateTime desc",
+                    "$top": "50",
+                    "$select": "id,from,subject,body,receivedDateTime",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code != 200:
+                logger.error(
+                    "Failed to fetch unread emails",
+                    extra={
+                        "status": resp.status_code,
+                        "body": resp.text[:500],
+                    },
+                )
+                return []
+            return resp.json().get("value", [])
+        except Exception:
+            logger.exception("Error fetching unread emails")
+            return []
+
+    async def _mark_as_read(self, token: str, message_id: str) -> None:
+        """Mark a message as read via Graph API PATCH."""
+        url = f"{_GRAPH_BASE}/users/{self.mailbox}/messages/{message_id}"
+        try:
+            resp = await self._client.patch(
+                url,
+                json={"isRead": True},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            if resp.status_code not in (200, 204):
+                logger.error(
+                    "Failed to mark email as read",
+                    extra={
+                        "message_id": message_id,
+                        "status": resp.status_code,
+                    },
+                )
+        except Exception:
+            logger.exception(
+                "Error marking email as read",
+                extra={"message_id": message_id},
+            )
