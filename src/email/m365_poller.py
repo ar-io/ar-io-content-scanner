@@ -128,16 +128,24 @@ class M365EmailPoller:
                 .get("address", "unknown")
             )
             subject = msg.get("subject", "(no subject)")
-            text_body = msg.get("body", {}).get("content", "") if msg.get("body", {}).get("contentType") == "text" else ""
-            # Graph API returns body in the requested format; we request both
-            # by fetching the message with body in text and also uniqueBody.
-            # For simplicity, treat the body content as potentially HTML.
-            html_body = msg.get("body", {}).get("content", "") if msg.get("body", {}).get("contentType") == "html" else ""
+            # Graph API returns body in one format (text or html).
+            # We feed the content to both extraction paths regardless,
+            # since extract_all_tx_ids combines text+html and runs all
+            # regex strategies on the combined content.
+            body_obj = msg.get("body", {})
+            body_content = body_obj.get("content", "")
+            body_type = body_obj.get("contentType", "").lower()
 
-            # If we only got one format, use it for both to maximize extraction
-            if not text_body and not html_body:
-                # Fallback: use whatever content is there
-                text_body = msg.get("body", {}).get("content", "")
+            # Truncate to prevent memory/CPU issues with huge emails
+            MAX_BODY = 1_000_000  # 1MB
+            body_content = body_content[:MAX_BODY]
+
+            if body_type == "text":
+                text_body, html_body = body_content, ""
+            else:
+                # html or unknown — treat as HTML, also pass as text
+                # since HTML often contains the same URLs as plain text
+                text_body, html_body = body_content, body_content
 
             tx_ids = extract_all_tx_ids(text_body, html_body)
 
@@ -162,34 +170,58 @@ class M365EmailPoller:
                 },
             )
 
-            # Slack notification summary
-            if self.notifier and self.notifier.slack and tx_ids:
+            # Slack notification summary (send even when 0 TX IDs found
+            # so operators know the email was processed)
+            if self.notifier and self.notifier.slack:
                 try:
-                    tx_list = ", ".join(tx_ids[:20])
-                    if len(tx_ids) > 20:
-                        tx_list += f" ... and {len(tx_ids) - 20} more"
+                    # Sanitize sender/subject to prevent Slack mrkdwn injection
+                    safe_sender = sender.replace("`", "'").replace("*", "").replace("_", "")
+                    safe_subject = subject.replace("`", "'").replace("*", "").replace("_", "")
+
+                    if tx_ids:
+                        tx_list = ", ".join(tx_ids[:20])
+                        if len(tx_ids) > 20:
+                            tx_list += f" ... and {len(tx_ids) - 20} more"
+                        text = (
+                            f"*Email abuse report processed*\n"
+                            f"From: {safe_sender}\n"
+                            f"Subject: {safe_subject}\n"
+                            f"TX IDs found: {len(tx_ids)} "
+                            f"(enqueued: {enqueued})\n"
+                            f"```{tx_list}```"
+                        )
+                    else:
+                        text = (
+                            f":warning: *Email abuse report — no TX IDs found*\n"
+                            f"From: {safe_sender}\n"
+                            f"Subject: {safe_subject}\n"
+                            f"_Check email manually or update extraction patterns_"
+                        )
+
                     await self.notifier.slack._client.post(
                         "https://slack.com/api/chat.postMessage",
                         json={
                             "channel": self.notifier.slack.channel_id,
-                            "text": (
-                                f"*Email abuse report processed*\n"
-                                f"From: {sender}\n"
-                                f"Subject: {subject}\n"
-                                f"TX IDs found: {len(tx_ids)} "
-                                f"(enqueued: {enqueued})\n"
-                                f"```{tx_list}```"
-                            ),
+                            "text": text,
                         },
                     )
                 except Exception:
-                    logger.error(
-                        "Failed to send email intake Slack notification",
+                    logger.warning(
+                        "email_intake_slack_notification_failed",
                         exc_info=True,
                     )
 
-            # Mark as read
-            await self._mark_as_read(token, msg_id)
+            # Mark as read — but only if we successfully processed it.
+            # If TX IDs were found but none enqueued (DB errors), keep it
+            # unread so it's retried next poll. Emails with 0 TX IDs are
+            # still marked read (nothing to enqueue).
+            if not tx_ids or enqueued > 0:
+                await self._mark_as_read(token, msg_id)
+            else:
+                logger.warning(
+                    "Skipping mark-as-read — TX IDs found but none enqueued",
+                    extra={"message_id": msg_id, "tx_ids": len(tx_ids)},
+                )
 
     # ------------------------------------------------------------------
     # Graph API helpers
@@ -213,7 +245,7 @@ class M365EmailPoller:
                     "Failed to acquire Graph API token",
                     extra={
                         "status": resp.status_code,
-                        "body": resp.text[:500],
+                        # Never log OAuth response bodies — may echo client_secret
                     },
                 )
                 return None
