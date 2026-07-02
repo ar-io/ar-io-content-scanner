@@ -154,10 +154,17 @@
         <!-- Backfill Status (only shown when configured) -->
         <template x-if="stats.backfill && stats.backfill.enabled">
         <div class="card">
-          <h3 class="font-display" style="font-size: 1rem; margin: 0 0 16px;">Backfill Status</h3>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin: 0 0 16px;">
+            <h3 class="font-display" style="font-size: 1rem; margin: 0;">Backfill Status</h3>
+            <button class="btn btn-sm btn-outline" @click="triggerBackfill()" :disabled="backfillStarting || stats.backfill.running" style="padding: 2px 10px; font-size: 0.75rem;" :title="stats.backfill.running ? 'A sweep is already running' : 'Start a sweep now'">
+              <span x-show="!stats.backfill.running && !backfillStarting">&#x21bb; Run sweep now</span>
+              <span x-show="stats.backfill.running">Running…</span>
+              <span x-show="backfillStarting && !stats.backfill.running">Starting…</span>
+            </button>
+          </div>
           <div class="grid-kv">
             <div style="color: var(--color-gray);">Status</div>
-            <div style="font-weight: 600;" x-text="stats.backfill.sweeps_completed > 0 ? 'Complete' : 'In Progress'"></div>
+            <div style="font-weight: 600;" :style="stats.backfill.running ? 'color: var(--color-amber)' : ''" x-text="stats.backfill.running ? 'Running…' : (stats.backfill.sweeps_completed > 0 ? 'Idle' : 'Not yet run')"></div>
             <div style="color: var(--color-gray);">Files Scanned</div>
             <div style="font-weight: 600;" x-text="stats.backfill.files_scanned.toLocaleString()"></div>
             <div style="color: var(--color-gray);">Malicious Found</div>
