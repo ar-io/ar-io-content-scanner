@@ -11,7 +11,9 @@ from src.ml.features import extract_features
 from src.models import ScanResult, Verdict
 from src.rules.base import Rule
 from src.rules.credential_kit import CredentialKitRule
+from src.rules.drainer_loader import DrainerLoaderRule
 from src.rules.external_form import ExternalFormRule
+from src.rules.external_script_drainer import ExternalScriptDrainerRule
 from src.rules.fake_challenge import FakeChallengeRule
 from src.rules.obfuscated_loader import ObfuscatedLoaderRule
 from src.rules.seed_phrase import SeedPhraseRule
@@ -42,6 +44,10 @@ class RuleEngine:
             self.rules.append(FakeChallengeRule())
         if settings.rule_credential_kit:
             self.rules.append(CredentialKitRule())
+        if settings.rule_external_script_drainer:
+            self.rules.append(ExternalScriptDrainerRule())
+        if settings.rule_drainer_loader:
+            self.rules.append(DrainerLoaderRule())
 
         logger.info(
             "Rule engine initialized",

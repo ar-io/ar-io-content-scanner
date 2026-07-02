@@ -60,6 +60,8 @@ class Settings:
     rule_obfuscated_loader: bool = True
     rule_fake_challenge: bool = True
     rule_credential_kit: bool = True
+    rule_external_script_drainer: bool = True
+    rule_drainer_loader: bool = True
 
     # Content scanner toggles
     scanner_example_image: bool = False
@@ -376,6 +378,12 @@ def load_settings() -> Settings:
         rule_fake_challenge=os.environ.get("RULE_FAKE_CHALLENGE", "true").lower()
         == "true",
         rule_credential_kit=os.environ.get("RULE_CREDENTIAL_KIT", "true").lower()
+        == "true",
+        rule_external_script_drainer=os.environ.get(
+            "RULE_EXTERNAL_SCRIPT_DRAINER", "true"
+        ).lower()
+        == "true",
+        rule_drainer_loader=os.environ.get("RULE_DRAINER_LOADER", "true").lower()
         == "true",
         scanner_example_image=os.environ.get(
             "SCANNER_EXAMPLE_IMAGE", "false"

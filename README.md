@@ -122,6 +122,12 @@ Each rule requires 2+ independent signals (conjunctive logic) to ensure near-zer
 | **External Credential Form** | Password input | Form action is absolute URL, or JS exfil patterns with external URL |
 | **Wallet Impersonation** | Crypto brand in title/headings/img alt/body text | Password input or key-phrase terminology |
 | **Obfuscated Loader** | DOM injection + encoding functions in script | Long base64, hex escapes, or charcode chains |
+| **Fake Challenge Page** | Unique fake-Cloudflare/"checking your connection" kit signature | (or) generic cloak phrase + a corroborating phrase |
+| **Credential Phishing Kit** | Known webmail/SSO/O365 kit template string | Credential context (password input or the kit's pre-filled error state) |
+| **External Script Drainer** | Executable `<script src>` from an external, non-allowlisted host | Wallet-provider interaction or public blockchain-RPC context |
+| **Drainer Loader** | Cloak "Loading…" shell (no inputs, sparse body) + `fetch()` into a script-exec sink | Public RPC endpoints, JSON-RPC calls, or wallet interaction |
+
+The last two catch **wallet drainers**: near-empty loader shells that pull their payload from an external clearnet host (External Script Drainer) or from an on-chain dead-drop and inject/execute it in-page (Drainer Loader). Both carry no password field and hide the real logic remotely, so the credential and obfuscated-loader rules miss them.
 
 ### ML Model (Advisory)
 
@@ -181,6 +187,10 @@ Arweave content is static -- there is no server-side backend. A password form po
 | `RULE_EXTERNAL_CREDENTIAL_FORM` | No | `true` | Enable external credential form rule |
 | `RULE_WALLET_IMPERSONATION` | No | `true` | Enable wallet impersonation rule |
 | `RULE_OBFUSCATED_LOADER` | No | `true` | Enable obfuscated loader rule |
+| `RULE_FAKE_CHALLENGE` | No | `true` | Enable fake challenge-page (cloak interstitial) rule |
+| `RULE_CREDENTIAL_KIT` | No | `true` | Enable known credential-kit template rule |
+| `RULE_EXTERNAL_SCRIPT_DRAINER` | No | `true` | Enable external-script wallet-drainer rule |
+| `RULE_DRAINER_LOADER` | No | `true` | Enable remote-payload / dead-drop wallet-drainer-loader rule |
 | `SCREENSHOT_ENABLED` | No | `true` | Capture screenshots of flagged content for admin review |
 | `SCREENSHOT_DIR` | No | `/app/data/screenshots` | Directory to store screenshot files |
 | `SCREENSHOT_TIMEOUT_MS` | No | `15000` | Page load + capture timeout in milliseconds |
