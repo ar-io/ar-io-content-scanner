@@ -229,13 +229,30 @@ Admin actions (confirm/dismiss) create overrides that persist across restarts. D
 
 ### Manual Block
 
-Use the Manual Block tab to immediately block an Arweave transaction by TX ID. This is useful for content reported through external channels or known-bad transactions that the scanner hasn't detected yet. Manual blocks:
+Use the Manual Block tab to immediately block content that the scanner hasn't detected yet — e.g. items reported through external channels or known-bad transactions. You can block by:
+
+- **Arweave TX ID** or **IPFS CID** — one or many (paste up to 100, one per line)
+- **Sandbox subdomain** — the base32 hostname Google Safe Browsing / the scanner report content by (e.g. `k7nom5…lfq.arweave.net`) is auto-decoded to its TX ID before blocking
+- **ArNS name** — block/unblock name resolution via `POST /api/admin/block-name` (single or up to 100). Name blocks are recorded on the gateway; because they aren't TX-ID-keyed they don't appear in the TX-ID "Manual Blocks" history.
+
+Content (TX ID / CID) manual blocks:
 
 - **Always block the gateway** regardless of scanner mode (dry-run or enforce) — this is an explicit operator action
 - Create a MALICIOUS verdict with `source='manual'` and a `confirmed_malicious` admin override
 - Appear in Scan History (filterable by "manual" source) and Review Queue (under "confirmed" status)
 - Can be reverted from the Review Queue, which restores the previous verdict and unblocks the content
 - Are **not exported** via the verdict feed to prevent operator decisions from propagating to peers
+
+## Slack Alerts
+
+When `SLACK_ENABLED=true`, the scanner posts an alert (with a screenshot) to `SLACK_CHANNEL_ID` for each detection at or above `SLACK_NOTIFICATION_THRESHOLD` (`malicious` or `suspicious`). Each alert carries **Confirm / Dismiss / Classify** buttons that block/unblock the content and update the message in place.
+
+Button clicks reach the scanner one of two ways:
+
+- **Socket Mode (recommended)** — set `SLACK_APP_TOKEN` (`xapp-`, scope `connections:write`) and enable Socket Mode + Interactivity in your Slack app. The scanner opens an **outbound** WebSocket to Slack, so **no public callback URL or inbound port is required**.
+- **HTTP request URL** — expose `POST /api/slack/actions` (HMAC-verified with `SLACK_SIGNING_SECRET`) publicly over HTTPS and set it as the app's Interactivity Request URL.
+
+The bot needs `chat:write` (post), `files:write` (screenshots), and to be invited to the channel.
 
 ## HTTP Endpoints
 
