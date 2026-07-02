@@ -139,6 +139,14 @@ class Settings:
     slack_signing_secret: str = ""
     slack_notification_threshold: str = "malicious"  # or "suspicious"
 
+    # Email intake (M365)
+    email_intake_enabled: bool = False
+    email_intake_tenant_id: str = ""
+    email_intake_client_id: str = ""
+    email_intake_client_secret: str = ""
+    email_intake_mailbox: str = ""  # e.g., abuse@ar.io
+    email_intake_poll_interval: int = 60  # seconds
+
 
 def load_settings() -> Settings:
     gateway_url = os.environ.get("GATEWAY_URL")
@@ -343,6 +351,38 @@ def load_settings() -> Settings:
             "(needed to verify Slack button callbacks)"
         )
 
+    # Email intake (M365) settings
+    email_intake_enabled = (
+        os.environ.get("EMAIL_INTAKE_ENABLED", "false").lower() == "true"
+    )
+    email_intake_tenant_id = os.environ.get("EMAIL_INTAKE_TENANT_ID", "")
+    email_intake_client_id = os.environ.get("EMAIL_INTAKE_CLIENT_ID", "")
+    email_intake_client_secret = os.environ.get("EMAIL_INTAKE_CLIENT_SECRET", "")
+    email_intake_mailbox = os.environ.get("EMAIL_INTAKE_MAILBOX", "")
+    email_intake_poll_interval = int(
+        os.environ.get("EMAIL_INTAKE_POLL_INTERVAL", "60")
+    )
+
+    if email_intake_enabled:
+        if not email_intake_tenant_id:
+            raise ValueError(
+                "EMAIL_INTAKE_TENANT_ID is required when EMAIL_INTAKE_ENABLED=true"
+            )
+        if not email_intake_client_id:
+            raise ValueError(
+                "EMAIL_INTAKE_CLIENT_ID is required when EMAIL_INTAKE_ENABLED=true"
+            )
+        if not email_intake_client_secret:
+            raise ValueError(
+                "EMAIL_INTAKE_CLIENT_SECRET is required when EMAIL_INTAKE_ENABLED=true"
+            )
+        if not email_intake_mailbox:
+            raise ValueError(
+                "EMAIL_INTAKE_MAILBOX is required when EMAIL_INTAKE_ENABLED=true"
+            )
+    if email_intake_poll_interval < 10:
+        raise ValueError("EMAIL_INTAKE_POLL_INTERVAL must be >= 10")
+
     return Settings(
         gateway_url=gateway_url.rstrip("/"),
         admin_api_key=admin_api_key,
@@ -424,4 +464,10 @@ def load_settings() -> Settings:
         slack_channel_id=slack_channel_id,
         slack_signing_secret=slack_signing_secret,
         slack_notification_threshold=slack_notification_threshold,
+        email_intake_enabled=email_intake_enabled,
+        email_intake_tenant_id=email_intake_tenant_id,
+        email_intake_client_id=email_intake_client_id,
+        email_intake_client_secret=email_intake_client_secret,
+        email_intake_mailbox=email_intake_mailbox,
+        email_intake_poll_interval=email_intake_poll_interval,
     )
