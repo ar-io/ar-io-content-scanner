@@ -1,8 +1,11 @@
 <!-- Settings Tab -->
 <div x-data="settingsTab" x-init="init()">
-  <div class="section-header">
-    <h2>Settings</h2>
-    <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0;">Settings are configured via environment variables. Changes require a container restart.</p>
+  <div class="section-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+    <div>
+      <h2>Settings</h2>
+      <p style="font-size: 0.8rem; color: var(--color-gray); margin: 0;">Settings are configured via environment variables. Changes require a container restart.</p>
+    </div>
+    <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
   </div>
 
   <template x-if="error">

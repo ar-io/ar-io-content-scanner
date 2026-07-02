@@ -4,6 +4,7 @@
     <h2 style="margin: 0;">Dashboard</h2>
     <div style="display: flex; gap: 12px; align-items: center;">
       <span style="font-size: 0.75rem; color: var(--color-gray);">Updated <span x-text="lastUpdatedAgo"></span></span>
+      <button class="btn btn-sm btn-outline" @click="load()" title="Refresh" style="padding: 2px 8px; font-size: 0.75rem;">&#x21bb;</button>
       <button @click="autoRefresh = !autoRefresh" class="btn btn-sm" :class="autoRefresh ? 'btn-outline' : 'btn-primary'" style="font-size: 0.7rem; padding: 2px 10px;" :title="autoRefresh ? 'Pause auto-refresh' : 'Resume auto-refresh'">
         <span x-text="autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'"></span>
       </button>
