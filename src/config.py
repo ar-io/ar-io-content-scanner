@@ -137,6 +137,7 @@ class Settings:
     slack_bot_token: str = ""
     slack_channel_id: str = ""
     slack_signing_secret: str = ""
+    slack_app_token: str = ""  # xapp- app token for Socket Mode button handling
     slack_notification_threshold: str = "malicious"  # or "suspicious"
 
 
@@ -322,6 +323,7 @@ def load_settings() -> Settings:
     slack_bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
     slack_channel_id = os.environ.get("SLACK_CHANNEL_ID", "")
     slack_signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+    slack_app_token = os.environ.get("SLACK_APP_TOKEN", "")
     slack_notification_threshold = os.environ.get(
         "SLACK_NOTIFICATION_THRESHOLD", "malicious"
     )
@@ -423,5 +425,6 @@ def load_settings() -> Settings:
         slack_bot_token=slack_bot_token,
         slack_channel_id=slack_channel_id,
         slack_signing_secret=slack_signing_secret,
+        slack_app_token=slack_app_token,
         slack_notification_threshold=slack_notification_threshold,
     )
