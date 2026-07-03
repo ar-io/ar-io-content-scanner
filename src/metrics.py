@@ -40,6 +40,9 @@ class ScanMetrics:
         # Rendered DOM scan metrics
         self.rendered_dom_scans = 0
         self.rendered_dom_detections = 0
+
+        # SingleFile/SingleFileZ archives decoded and scanned as real content
+        self.archive_decodes = 0
         # Content scanner metrics
         self.content_scans_total = 0
         self.content_scans_by_scanner: dict[str, int] = {}
@@ -132,6 +135,10 @@ class ScanMetrics:
             if detected:
                 self.rendered_dom_detections += 1
 
+    def record_archive_decode(self) -> None:
+        with self._lock:
+            self.archive_decodes += 1
+
     def record_content_scan(self, scanner_name: str | None = None) -> None:
         with self._lock:
             self.content_scans_total += 1
@@ -191,6 +198,7 @@ class ScanMetrics:
                 "safe_browsing_domain_checks": self.safe_browsing_domain_checks,
                 "rendered_dom_scans": self.rendered_dom_scans,
                 "rendered_dom_detections": self.rendered_dom_detections,
+                "archive_decodes": self.archive_decodes,
                 "content_scans_total": self.content_scans_total,
                 "content_scans_by_scanner": dict(self.content_scans_by_scanner),
             }

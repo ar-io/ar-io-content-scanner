@@ -172,7 +172,7 @@ class TestBackfillSweep:
     def test_empty_directory(self):
         tmpdir, _, _, db, _, _, metrics, scanner = self._make_env()
         # No data/ subdirectory at all
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
         assert stats["total_files"] == 0
         assert stats["scanned"] == 0
         db.close()
@@ -183,7 +183,7 @@ class TestBackfillSweep:
         tmpdir, _, _, db, _, _, _, scanner = self._make_env()
         assert scanner.is_sweeping is False
         scanner._sweeping = True  # simulate an in-progress sweep
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
         assert stats == {"skipped": "already_running"}
         scanner._sweeping = False
         db.close()
@@ -203,7 +203,7 @@ class TestBackfillSweep:
         hash_str = make_hash_str(1)
         place_file(tmpdir, hash_str, b'{"json": true}')
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["total_files"] == 1
         assert stats["skipped_not_html"] == 1
@@ -220,7 +220,7 @@ class TestBackfillSweep:
         hash_str = make_hash_str(2)
         place_file(tmpdir, hash_str, CLEAN_HTML.encode())
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["total_files"] == 1
         assert stats["scanned"] == 1
@@ -236,7 +236,7 @@ class TestBackfillSweep:
         hash_str = make_hash_str(3)
         place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["scanned"] == 1
         assert stats["malicious"] == 1
@@ -261,7 +261,7 @@ class TestBackfillSweep:
             scanner_version="0.1.0",
         )
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["total_files"] == 1
         assert stats["skipped_cached"] == 1
@@ -277,13 +277,13 @@ class TestBackfillSweep:
         place_file(tmpdir, h2, b"\x89PNG\r\n\x1a\n fake png")
 
         # First sweep scans everything
-        stats1 = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats1 = asyncio.run(scanner.sweep())
         assert stats1["scanned"] == 1
         assert stats1["skipped_not_html"] == 1
         assert stats1["skipped_cached"] == 0
 
         # Second sweep: all cached
-        stats2 = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats2 = asyncio.run(scanner.sweep())
         assert stats2["scanned"] == 0
         assert stats2["skipped_not_html"] == 0
         assert stats2["skipped_cached"] == 2
@@ -302,7 +302,7 @@ class TestBackfillSweep:
         place_file(tmpdir, h_json, b'{"not": "html"}')
         place_file(tmpdir, h_ext, EXTERNAL_FORM_PHISHING.encode())
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["total_files"] == 4
         assert stats["scanned"] == 3  # clean + 2 phishing
@@ -327,7 +327,7 @@ class TestBackfillSweep:
         place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
         create_gateway_db(gw_db_path, {hash_str: [tx_id_str]})
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["malicious"] == 1
         assert stats["blocked"] == 1
@@ -350,7 +350,7 @@ class TestBackfillSweep:
         hash_str = make_hash_str(30)
         place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["malicious"] == 1
         assert stats["blocked"] == 0
@@ -373,7 +373,7 @@ class TestBackfillSweep:
         place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
         create_gateway_db(gw_db_path, {hash_str: [tx1, tx2, tx3]})
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["malicious"] == 1
         assert stats["blocked"] == 3
@@ -389,7 +389,7 @@ class TestBackfillSweep:
         place_file(tmpdir, make_hash_str(51), SEED_PHRASE_PHISHING.encode())
         place_file(tmpdir, make_hash_str(52), b"not html")
 
-        asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        asyncio.run(scanner.sweep())
 
         assert metrics.backfill_sweeps_completed == 1
         assert metrics.backfill_files_scanned == 3  # 2 scanned + 1 skipped_not_html
@@ -408,7 +408,7 @@ class TestBackfillSweep:
         place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
         create_gateway_db(gw_db_path, {hash_str: [tx_id_str]})
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["malicious"] == 1
         assert stats["blocked"] == 0
