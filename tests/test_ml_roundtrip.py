@@ -38,12 +38,13 @@ class TestMLRoundtrip:
         clean_features = extract_features(clean_html).to_vector()
 
         # Train using Booster directly (avoids scikit-learn wrapper version issues)
-        X = np.array([phishing_features, phishing_features, clean_features, clean_features])
-        y = np.array([1, 1, 0, 0])
+        # Duplicate samples to give the model enough signal to learn
+        X = np.array([phishing_features] * 10 + [clean_features] * 10)
+        y = np.array([1] * 10 + [0] * 10)
 
         dtrain = xgb.DMatrix(X, label=y)
-        params = {"max_depth": 2, "eta": 0.5, "objective": "binary:logistic", "eval_metric": "logloss"}
-        booster = xgb.train(params, dtrain, num_boost_round=10)
+        params = {"max_depth": 3, "eta": 1.0, "objective": "binary:logistic", "eval_metric": "logloss"}
+        booster = xgb.train(params, dtrain, num_boost_round=50)
 
         model_path = str(tmp_path / "test_model.pkl")
         booster.save_model(model_path)
