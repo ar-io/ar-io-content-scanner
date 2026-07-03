@@ -119,6 +119,62 @@ To undo a manual content block, find it in the Review Queue (filter by "confirme
 
 Manual content blocks are recorded with `source=manual` in the database. They appear in Scan History (filterable by "manual" source) but are **not exported** via the verdict feed, so they don't propagate to peer scanners.
 
+## Email Intake (M365)
+
+When `EMAIL_INTAKE_ENABLED=true`, the scanner polls a Microsoft 365 mailbox for abuse reports and automatically extracts Arweave TX IDs for scanning.
+
+### Setup
+
+1. Create an Azure AD app registration with `Mail.ReadWrite` application permission
+2. Restrict access to the abuse mailbox only using an Exchange Online `ApplicationAccessPolicy`
+3. Set the `EMAIL_INTAKE_*` environment variables (tenant ID, client ID, client secret, mailbox address)
+
+### How it works
+
+The poller runs every `EMAIL_INTAKE_POLL_INTERVAL` seconds (default 60):
+1. Fetches unread emails from the mailbox via Microsoft Graph API
+2. Extracts TX IDs using three strategies: gateway URL parsing, base32 sandbox subdomain decoding, and standalone TX ID matching
+3. Enqueues extracted TX IDs for scanning through the normal pipeline
+4. Sends a Slack summary if notifications are enabled
+5. Marks processed emails as read
+
+If extraction finds no TX IDs, a warning is sent to Slack so operators can check manually. Emails are only marked as read if processing succeeded — failures are retried on the next poll.
+
+### Monitoring
+
+Check email intake status in the scanner logs:
+```bash
+docker logs ar-io-content-scanner | grep -i "email\|poll\|intake"
+```
+
+## ML Model Retraining
+
+The XGBoost model improves over time as operators classify content:
+
+- **Confirm & Block** → exports HTML to `/app/data/training/phishing/`
+- **Classify Neutral** → exports HTML to `/app/data/training/neutral/`
+
+### Retraining procedure
+
+```bash
+# 1. Copy training data from the running scanner
+docker cp ar-io-content-scanner:/app/data/training/phishing ./data/phishing
+docker cp ar-io-content-scanner:/app/data/training/neutral ./data/neutral
+
+# 2. Train the model
+cd training
+python3 train.py
+
+# 3. Deploy the new model
+cp xgboost_model.pkl ../xgboost_model.pkl
+cp model-manifest.json ../model-manifest.json
+# Rebuild and deploy the container image
+```
+
+The training script imports features directly from `src/ml/features.py` — there is no separate training copy. After training, a `model-manifest.json` is generated with accuracy metrics, and the classifier logs this manifest on startup.
+
+See `training/README.md` for full details.
+
 ## Monitoring
 
 ### Health Check
