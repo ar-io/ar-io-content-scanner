@@ -86,6 +86,30 @@ class BackfillScanner:
         self.metrics = metrics
         self.screenshot = screenshot
         self.dispatcher = dispatcher
+        self._sweeping = False
+        # Strong refs to in-flight manual-trigger tasks: the event loop only
+        # holds a weak reference, so without this a fire-and-forget sweep could
+        # be garbage-collected mid-run.
+        self._tasks: set = set()
+
+    @property
+    def is_sweeping(self) -> bool:
+        """True while a sweep is in progress (guards against concurrent runs)."""
+        return self._sweeping
+
+    def trigger(self) -> str:
+        """Start a sweep in the background unless one is already running.
+
+        Returns ``"started"`` or ``"already_running"``. Safe against rapid
+        repeat calls: ``sweep()``'s own guard makes any extra task a no-op, and
+        every task stays referenced (in ``_tasks``) until it completes.
+        """
+        if self._sweeping:
+            return "already_running"
+        task = asyncio.create_task(self.sweep())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return "started"
 
     async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
         try:
@@ -171,6 +195,23 @@ class BackfillScanner:
             return []
 
     async def sweep(self) -> dict:
+        """Run one guarded sweep.
+
+        Only one sweep runs at a time: a concurrent call (the scheduled
+        backfill loop vs. a manual admin trigger) returns immediately with
+        ``{"skipped": "already_running"}``. The guard flips synchronously
+        before the first await, so the check-and-set is race-free.
+        """
+        if self._sweeping:
+            logger.warning("backfill_sweep_already_running")
+            return {"skipped": "already_running"}
+        self._sweeping = True
+        try:
+            return await self._sweep_impl()
+        finally:
+            self._sweeping = False
+
+    async def _sweep_impl(self) -> dict:
         """Run one full sweep of the contiguous data directory."""
         start_time = time.monotonic()
 

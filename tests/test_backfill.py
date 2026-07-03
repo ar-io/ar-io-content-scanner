@@ -177,6 +177,26 @@ class TestBackfillSweep:
         assert stats["scanned"] == 0
         db.close()
 
+    def test_concurrent_sweep_is_skipped(self):
+        # A second sweep while one is in progress must return immediately
+        # without starting another (guards manual trigger vs scheduled loop).
+        tmpdir, _, _, db, _, _, _, scanner = self._make_env()
+        assert scanner.is_sweeping is False
+        scanner._sweeping = True  # simulate an in-progress sweep
+        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        assert stats == {"skipped": "already_running"}
+        scanner._sweeping = False
+        db.close()
+
+    def test_trigger_reports_already_running(self):
+        # trigger() must not spawn a task when a sweep is already running.
+        tmpdir, _, _, db, _, _, _, scanner = self._make_env()
+        scanner._sweeping = True
+        assert scanner.trigger() == "already_running"
+        assert len(scanner._tasks) == 0
+        scanner._sweeping = False
+        db.close()
+
     def test_skips_non_html(self):
         tmpdir, _, _, db, _, _, metrics, scanner = self._make_env()
 

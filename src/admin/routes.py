@@ -88,6 +88,10 @@ def build_admin_router(app_state) -> APIRouter:
                 "malicious_found": int(db.get_state("backfill_malicious_found", "0")),
                 "sweeps_completed": int(db.get_state("backfill_sweeps_completed", "0")),
                 "last_sweep_at": int(db.get_state("backfill_last_sweep_at", "0")) or None,
+                "running": bool(
+                    getattr(_state, "backfill", None) is not None
+                    and _state.backfill.is_sweeping
+                ),
             },
             "verdict_feed": {
                 "enabled": bool(settings.verdict_api_key),
@@ -581,6 +585,19 @@ def build_admin_router(app_state) -> APIRouter:
             "errors": errors,
         }
 
+    @router.post("/api/admin/backfill/trigger")
+    async def backfill_trigger(_key: str = Depends(auth)):
+        """Start a backfill sweep on demand, unless one is already running."""
+        backfill = getattr(_state, "backfill", None)
+        if backfill is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Backfill is not enabled (set BACKFILL_ENABLED=true).",
+            )
+        status = backfill.trigger()
+        if status == "started":
+            logger.info("backfill_trigger_manual")
+        return {"status": status}
     def _parse_names(body: dict) -> list[str]:
         names_raw = body.get("names", [])
         single = body.get("name", "")

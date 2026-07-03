@@ -8,6 +8,7 @@ document.addEventListener('alpine:init', function () {
       error: '',
       lastUpdated: null,
       autoRefresh: true,
+      backfillStarting: false,
       _interval: null,
       _tickInterval: null,
       _tickCount: 0,
@@ -39,6 +40,25 @@ document.addEventListener('alpine:init', function () {
           this.error = 'Failed to load dashboard data. Check your connection and try again.';
           this.loading = false;
         }
+      },
+
+      // Start a backfill sweep on demand (no-op if one is already running).
+      async triggerBackfill() {
+        this.backfillStarting = true;
+        try {
+          var resp = await api('/api/admin/backfill/trigger', { method: 'POST' });
+          var data = await resp.json().catch(function () { return {}; });
+          if (!resp.ok) throw new Error(data.detail || 'Request failed (HTTP ' + resp.status + ')');
+          if (data.status === 'already_running') {
+            Alpine.store('toast').show('A backfill sweep is already running', 'info');
+          } else {
+            Alpine.store('toast').show('Backfill sweep started', 'success');
+          }
+          await this.load();
+        } catch (e) {
+          Alpine.store('toast').show('Failed to start sweep: ' + (e.message || 'Unknown error'), 'error');
+        }
+        this.backfillStarting = false;
       },
 
       get uptimeFormatted() {

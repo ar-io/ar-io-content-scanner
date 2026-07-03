@@ -255,6 +255,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     app.state.feed_poller = feed_poller
     app.state.safe_browsing = safe_browsing
     app.state.registry = registry
+    app.state.backfill = backfill
 
     # Mount verdict feed API if configured
     if settings.verdict_api_key:
