@@ -26,10 +26,13 @@ async def confirm_block(
     gateway: GatewayClient,
     scanner_mode: str,
     notes: str = "",
+    training_data_dir: str = "/app/data/training",
 ) -> ActionResult:
     """Confirm content as malicious and block it.
 
     Shared logic used by both the admin API and Slack action handler.
+    Also exports content to the phishing training data directory for
+    future ML model retraining.
     """
     verdict = db.get_verdict(content_hash)
     if verdict is None:
@@ -56,6 +59,30 @@ async def confirm_block(
         )
         if blocked:
             db.mark_blocked(content_hash)
+
+    # Export to phishing training data for ML retraining
+    try:
+        phishing_dir = os.path.join(training_data_dir, "phishing")
+        os.makedirs(phishing_dir, exist_ok=True)
+        content = await gateway.fetch_content(verdict.tx_id)
+        if content:
+            export_path = os.path.join(phishing_dir, f"{content_hash}.html")
+            with open(export_path, "wb") as f:
+                f.write(content)
+            logger.info(
+                "training_data_exported",
+                extra={
+                    "content_hash": content_hash,
+                    "label": "phishing",
+                    "path": export_path,
+                },
+            )
+    except Exception:
+        logger.warning(
+            "training_data_export_failed",
+            extra={"content_hash": content_hash, "label": "phishing"},
+            exc_info=True,
+        )
 
     logger.info(
         "action_confirm",
@@ -144,22 +171,22 @@ async def classify_neutral(
     if not result.success:
         return result
 
-    # Export to training data directory
+    # Export to neutral training data directory for ML retraining
     try:
         verdict = db.get_verdict(content_hash)
         if verdict and verdict.tx_id:
-            training_dir = training_data_dir
-            os.makedirs(training_dir, exist_ok=True)
-            # Fetch content for training export
+            neutral_dir = os.path.join(training_data_dir, "neutral")
+            os.makedirs(neutral_dir, exist_ok=True)
             content = await gateway.fetch_content(verdict.tx_id)
             if content:
-                export_path = os.path.join(training_dir, f"{content_hash}.html")
+                export_path = os.path.join(neutral_dir, f"{content_hash}.html")
                 with open(export_path, "wb") as f:
                     f.write(content)
                 logger.info(
                     "training_data_exported",
                     extra={
                         "content_hash": content_hash,
+                        "label": "neutral",
                         "path": export_path,
                     },
                 )

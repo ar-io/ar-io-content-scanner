@@ -172,7 +172,7 @@ class M365EmailPoller:
 
             # Slack notification summary (send even when 0 TX IDs found
             # so operators know the email was processed)
-            if self.notifier and self.notifier.slack:
+            if self.notifier and hasattr(self.notifier, 'slack') and self.notifier.slack:
                 try:
                     # Sanitize sender/subject to prevent Slack mrkdwn injection
                     safe_sender = sender.replace("`", "'").replace("*", "").replace("_", "")
