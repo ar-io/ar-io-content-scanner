@@ -40,7 +40,7 @@ Gateway emits webhook (`data-cached`, `tx-indexed`, or `ans104-data-item-indexed
 - **Non-HTML content** → `ScanDispatcher` → `ContentScannerRegistry` → matching `ContentScanner(s)` run concurrently (Tier 2)
 - **No scanner matches** → SKIPPED
 
-After scanning → caches verdict in `scan_verdicts` table → checks Google Safe Browsing if flagged (escalates SUSPICIOUS→MALICIOUS if Google corroborates) → captures screenshot if flagged (HTML only) → blocks via `PUT /ar-io/admin/block-data` if malicious and mode is `enforce`.
+After scanning → caches verdict in `scan_verdicts` table → checks Google Safe Browsing if flagged (escalates SUSPICIOUS→MALICIOUS if Google corroborates) → captures screenshot if flagged (HTML only) → blocks via `PUT /ar-io/admin/block-data` if malicious and mode is `enforce` → dispatches a Slack alert via `NotificationRouter` if the verdict meets `SLACK_NOTIFICATION_THRESHOLD`.
 
 ### Key Components
 
@@ -59,8 +59,11 @@ After scanning → caches verdict in `scan_verdicts` table → checks Google Saf
 - **`safe_browsing.py`**: `SafeBrowsingClient` with two backends: Lookup API v4 (`check_url()`/`check_urls()`, requires `SAFE_BROWSING_API_KEY`) for per-URL checks, and Google Transparency Report (`check_domain()`, no key needed) for site-level domain monitoring. Returns `SafeBrowsingResult` or `DomainStatus`. Fail-open design: API errors never affect scanning. Used on-verdict (in `scanner.py`) and periodically (in `worker.py`'s monitor loop). Domain monitoring requires `GATEWAY_PUBLIC_URL` to be set.
 - **`screenshot.py`**: `ScreenshotService` uses Playwright (headless Chromium) to capture screenshots of flagged content and render DOM for two-pass scanning (`render_dom()`). Network-isolated: only gateway-origin requests are allowed. Screenshots stored as `{SCREENSHOT_DIR}/{content_hash}.jpg`, deleted when admin confirms/dismisses.
 - **`feed/`**: Peer-to-peer verdict sharing. `client.py` (`FeedClient`) is an async httpx client for fetching verdicts from peers. `poller.py` (`FeedPoller`) periodically syncs new verdicts from configured peer URLs using cursor-based pagination. `routes.py` exposes `GET /api/verdicts` (paginated feed) and `GET /api/verdicts/{hash}` (single lookup) for peers to consume. `auth.py` provides Bearer token auth via `VERDICT_API_KEY`. Only exports `source='local'` verdicts to prevent echo loops.
+- **`notifications/`**: Outbound alerting. `router.py` (`NotificationRouter`) dispatches verdict alerts to enabled adapters when the verdict meets `SLACK_NOTIFICATION_THRESHOLD` (fail-open). `slack.py` (`SlackNotifier`) posts Block Kit messages with interactive buttons (Confirm Block / Dismiss / Classify Neutral) and uploads screenshots via Slack's `files.getUploadURLExternal` flow. `slack_socket.py` (`SlackSocketListener`) is an optional Socket Mode transport (outbound WebSocket via `SLACK_APP_TOKEN`) so button callbacks work without exposing a public request URL.
+- **`admin/actions.py`**: Shared block/dismiss/reclassify logic used by both the admin API and the Slack action handler. `confirm_block()` enriches the gateway block reason for human-confirmed blocks (e.g. `"Confirmed via Slack (suspicious)"`) so the gateway audit trail distinguishes a human confirm from an auto-block; empty notes fall back to `block_data`'s `"Auto-blocked: <rules>"` default. `classify_neutral()` dismisses as false-positive and exports the HTML to the training-data dir for future ML retraining.
+- **`admin/slack_actions.py`**: FastAPI router handling Slack interactivity callbacks. Verifies Slack request signatures (HMAC-SHA256, 5-minute replay window) before routing button presses to the `admin/actions.py` handlers.
 - **`scanners/`**: Pluggable content scanner framework (Tier 2). `base.py` defines the `ContentScanner` ABC, `ContentMetadata`, and `ContentScannerResult`. `registry.py` (`ContentScannerRegistry`) matches scanners to MIME types via fnmatch patterns. `dispatcher.py` (`ScanDispatcher`) sits above both tiers, routing HTML to `RuleEngine` and non-HTML to matching content scanners (concurrent via `asyncio.gather`, fail-open). `sniff.py` detects MIME types from magic bytes for backfill. `example_image_scanner.py` is a disabled-by-default stub for `image/*`.
-- **`admin/routes.py`**: Admin API router built via `build_admin_router(app_state)`. Uses `_state.db` accessor pattern (reads from `app_state` at request time, not build time) so tests can replace DB after `build_app()`. Includes `POST /api/admin/block` for manual blocking by TX ID (always calls gateway, not mode-gated).
+- **`admin/routes.py`**: Admin API router built via `build_admin_router(app_state)`. Uses `_state.db` accessor pattern (reads from `app_state` at request time, not build time) so tests can replace DB after `build_app()`. Includes `POST /api/admin/block` for manual blocking by TX ID (always calls gateway, not mode-gated), plus `POST /api/admin/block-name` / `POST /api/admin/unblock-name` for ArNS-name blocking (single name or array up to 100; names validated against `[a-zA-Z0-9_-]{1,51}` and lowercased). Name blocking goes through `GatewayClient.block_name()`/`unblock_name()` (`PUT /ar-io/admin/block-name` / `/unblock-name`). The Manual Block UI also decodes sandbox subdomains (base32-encoded TX ID → 43-char id) before submitting.
 - **`admin/auth.py`**: FastAPI Bearer token dependency factory for `SCANNER_ADMIN_KEY` authentication.
 
 ### Verdict Matrix
@@ -90,6 +93,10 @@ GATEWAY_PUBLIC_URL required to enable domain monitoring
 | `external-credential-form` | Password input AND (form action is absolute URL OR JS exfil patterns such as `$.ajax`/`fetch` targeting an external URL) |
 | `wallet-impersonation` | Crypto brand in title/headings/img alt/body text AND (password input OR key-phrase terminology) |
 | `obfuscated-loader` | DOM injection AND encoding functions in script AND (long base64 OR hex escapes OR charcode chains) |
+| `fake-challenge-page` | A near-zero-FP unique kit signature OR (generic cloak phrase AND corroborator). Catches fake Cloudflare/"checking your connection" cloak interstitials that carry no password field and would otherwise land as ML-only SUSPICIOUS and get served |
+| `credential-phishing-kit` | A distinctive known-kit template string (webmail portal, Zimbra clone, O365 redirector, etc.) AND a credential context (password-like input OR the kit's own pre-filled error state) |
+| `external-script-drainer` | An executable `<script src>` to an external, non-allowlisted host (Arweave dApps bundle their JS) AND wallet-provider interaction or public blockchain-RPC context. Catches wallet drainers whose payload loads from a clearnet drainer CDN |
+| `drainer-loader` | The inline/dead-drop sibling: a cloak `Loading…` shell (no inputs, sparse visible body) AND a `fetch()` paired with a script-execution sink (dynamic `<script>`/`document.write`/`eval`) AND blockchain-RPC or wallet context. Catches drainers that resolve their payload host from an on-chain memo and inject+execute it in-page |
 
 ### Defense-in-Depth Layers
 
@@ -104,7 +111,7 @@ The admin dashboard (`src/templates/admin/`, `src/static/admin/`) uses Alpine.js
 - Dashboard auto-refreshes every 30 seconds. Detection rows dispatch `search-review` events to cross-link to the review tab.
 - History tab supports verdict/source/period filters (including `manual` source), pagination, and CSV export.
 - Review tab provides confirm/dismiss actions for flagged content.
-- Manual Block tab (`block.html`/`block.js`) lets operators block transactions by TX ID. Uses `POST /api/admin/block`, always calls the gateway regardless of scanner mode. Creates verdict (`source='manual'`) and override records. Blocks appear in history (filterable by `manual` source) and review queue (as confirmed). Manual blocks are not exported via verdict feed.
+- Manual Block tab (`block.html`/`block.js`) lets operators block transactions by TX ID (and ArNS names). Uses `POST /api/admin/block`, always calls the gateway regardless of scanner mode. Creates verdict (`source='manual'`) and override records. Blocks appear in history (filterable by `manual` source) and review queue (as confirmed). Manual blocks are not exported via verdict feed. Also supports ArNS-name blocking via `POST /api/admin/block-name`, and decodes sandbox subdomains (base32 → 43-char TX ID) client-side before submitting.
 
 ### Why This Works on Arweave
 
@@ -146,13 +153,19 @@ Required: `GATEWAY_URL`, `ADMIN_API_KEY`, `SCANNER_ADMIN_KEY`
 
 Optional: `SCANNER_MODE` (dry-run|enforce, default: dry-run), `WEBHOOK_EVENTS` (comma-separated, default: `data-cached,tx-indexed,ans104-data-item-indexed` — controls which gateway webhook events are processed), `WEBHOOK_INDEX_DELAY` (60 — seconds to wait before processing indexed events, giving the gateway's data indexer time to save parent bundle relationships), `SCANNER_PORT` (3100), `SCANNER_WORKERS` (2), `ML_MODEL_ENABLED` (true), `ML_MODEL_PATH` (./xgboost_model.pkl), `ML_SUSPICIOUS_THRESHOLD` (0.95, range 0–1), `LOG_LEVEL` (info), `LOG_FORMAT` (text|json, default: text — "text" for human-readable Docker logs, "json" for log aggregation), `DB_PATH` (/app/data/scanner.db), `MAX_SCAN_BYTES` (262144), `SCAN_TIMEOUT` (10000ms), `ADMIN_UI_ENABLED` (true), `GATEWAY_PUBLIC_URL` (empty — public gateway URL for clickable TX ID links in admin UI, e.g. `https://vilenarios.com`)
 
-Rule toggles (all default true): `RULE_SEED_PHRASE`, `RULE_EXTERNAL_CREDENTIAL_FORM`, `RULE_WALLET_IMPERSONATION`, `RULE_OBFUSCATED_LOADER`
+Rule toggles (all default true): `RULE_SEED_PHRASE`, `RULE_EXTERNAL_CREDENTIAL_FORM`, `RULE_WALLET_IMPERSONATION`, `RULE_OBFUSCATED_LOADER`, `RULE_FAKE_CHALLENGE`, `RULE_CREDENTIAL_KIT`, `RULE_EXTERNAL_SCRIPT_DRAINER`, `RULE_DRAINER_LOADER`
 
 Rendered DOM: `RENDERED_DOM_SCAN_ENABLED` (true — two-pass scan with Playwright for JS-rendered phishing)
 
 Content scanners: `SCANNER_EXAMPLE_IMAGE` (false — stub image scanner for development/testing)
 
-Screenshots: `SCREENSHOT_ENABLED` (true), `SCREENSHOT_DIR` (/app/data/screenshots), `SCREENSHOT_TIMEOUT_MS` (15000)
+Screenshots: `SCREENSHOT_ENABLED` (true), `SCREENSHOT_DIR` (/app/data/screenshots), `SCREENSHOT_TIMEOUT_MS` (15000), `SCREENSHOT_RETENTION_DAYS` (30 — captured screenshots older than this are purged)
+
+Slack notifications: `SLACK_ENABLED` (false), `SLACK_BOT_TOKEN` (required when enabled), `SLACK_CHANNEL_ID` (required when enabled), `SLACK_SIGNING_SECRET` (required when enabled — verifies interactivity callbacks), `SLACK_NOTIFICATION_THRESHOLD` (malicious|suspicious, default: malicious), `SLACK_APP_TOKEN` (optional `xapp-` token — enables Socket Mode so button callbacks work without a public request URL)
+
+Edge cache revalidation: `EDGE_CACHE_REVALIDATION_ENABLED` (false), `EDGE_CACHE_REVALIDATION_URL_BASE` (public origin to hit; falls back to `GATEWAY_PUBLIC_URL`, required when enabled), `EDGE_CACHE_REVALIDATION_HEADERS` (default `Cache-Control: no-cache, X-Cache-Bypass: 1`), `EDGE_CACHE_REVALIDATION_PATHS_ARWEAVE` (default `/raw/{id},/{id}`), `EDGE_CACHE_REVALIDATION_PATHS_IPFS` (default `/ipfs/{id}`), `EDGE_CACHE_REVALIDATION_TIMEOUT_MS` (5000, min 100)
+
+Version: `SCANNER_VERSION` (defaults to the version in `pyproject.toml`)
 
 Verdict feed: `VERDICT_API_KEY` (enables feed feature), `VERDICT_FEED_URLS` (comma-separated peer scanner URLs), `VERDICT_FEED_POLL_INTERVAL` (300s, min 10), `VERDICT_FEED_TRUST_MODE` (malicious_only|all), `VERDICT_FEED_ON_DEMAND` (true — query peers on cache miss), `VERDICT_FEED_REQUEST_TIMEOUT_MS` (5000)
 

@@ -1,37 +1,46 @@
+from __future__ import annotations
+
 import os
+import sys
+
 import numpy as np
 import xgboost as xgb
-from extract_features import extract_features
+
+# Import feature extraction from the production module
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.ml.features import extract_features
 
 model = xgb.XGBClassifier()
 model.load_model("xgboost_model.pkl")
 
-# Load the model from disk
-# with open('xgboost_model.pkl', 'rb') as file:
-#     model = pickle.load(file)
-
-# Prepare the unseen data
 unknown_folder = "data/uncategorized/html/"
-unknown_files = os.listdir(unknown_folder)
+if not os.path.isdir(unknown_folder):
+    print(f"No uncategorized data found at {unknown_folder}")
+    sys.exit(0)
 
-# Extract features for each unseen file
+unknown_files = os.listdir(unknown_folder)
+if not unknown_files:
+    print("No files to classify.")
+    sys.exit(0)
+
 X_unknown = []
 for file in unknown_files:
-    with open(os.path.join(unknown_folder, file), 'r', encoding='utf-8') as f:
+    with open(os.path.join(unknown_folder, file), "r", encoding="utf-8") as f:
         content = f.read()
     features = extract_features(content)
-    X_unknown.append(features)
+    X_unknown.append(features.to_vector())
 
 X_unknown = np.array(X_unknown)
 
-# Make predictions on the unseen data
 y_pred = model.predict(X_unknown)
 
-# Analyze the predictions
-# Replace these labels with the actual class names you used when training the model
-class_labels = ['neutral', 'phishing']
+class_labels = ["neutral", "phishing"]
+phishing_count = 0
 
 for file, prediction in zip(unknown_files, y_pred):
-  if class_labels[prediction] == 'phishing':
-    print(f"File: {file}")
-    print(f"Predicted class: {class_labels[prediction]}\n")
+    label = class_labels[prediction]
+    if label == "phishing":
+        print(f"PHISHING: {file}")
+        phishing_count += 1
+
+print(f"\n{phishing_count} phishing / {len(unknown_files)} total files")

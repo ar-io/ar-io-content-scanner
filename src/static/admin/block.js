@@ -9,6 +9,47 @@ document.addEventListener('alpine:init', function () {
     return ARWEAVE_ID_RE.test(s) || isIpfsCid(s);
   }
 
+  // --- Sandbox subdomain -> Arweave TX ID -------------------------------
+  // Arweave gateways serve each tx on a "sandbox" subdomain that is the
+  // RFC-4648 base32 (lowercase, unpadded) of the tx's raw 32 bytes. Google
+  // Safe Browsing and the scanner report offending content by that hostname,
+  // so accept it here and decode it back to the 43-char base64url TX ID.
+  var B32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+  function base32ToBytes(s) {
+    s = s.toUpperCase().replace(/=+$/, '');
+    var bits = 0, value = 0, out = [];
+    for (var i = 0; i < s.length; i++) {
+      var idx = B32_ALPHABET.indexOf(s.charAt(i));
+      if (idx < 0) return null;
+      value = (value << 5) | idx;
+      bits += 5;
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 0xff);
+        bits -= 8;
+      }
+    }
+    return out;
+  }
+
+  function bytesToB64url(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  // Returns the 43-char TX ID for a sandbox subdomain (bare label or full
+  // hostname like "<label>.arweave.net"), or null if it isn't one.
+  function sandboxToTxId(input) {
+    var label = String(input).trim().toLowerCase().split('.')[0];
+    // CIDv1 also uses base32 and starts with "baf" — leave those to isIpfsCid.
+    if (label.indexOf('baf') === 0) return null;
+    if (!/^[a-z2-7]{52}$/.test(label)) return null;
+    var bytes = base32ToBytes(label);
+    if (!bytes || bytes.length !== 32) return null;
+    return bytesToB64url(bytes);
+  }
+
   Alpine.data('blockTab', function () {
     return {
       txInput: '',
@@ -63,7 +104,76 @@ document.addEventListener('alpine:init', function () {
         if (!this.txInput.trim()) return [];
         return this.txInput.split(/[\n,]+/)
           .map(function (s) { return s.trim(); })
+          .filter(function (s) { return s.length > 0; })
+          // Transparently resolve sandbox subdomains to their TX ID so the
+          // count, preview, validation, and submitted payload all use the
+          // real ID. Non-sandbox entries pass through unchanged.
+          .map(function (s) { return sandboxToTxId(s) || s; });
+      },
+
+      // --- ArNS name blocking ---
+      nameInput: '',
+      nameReason: '',
+      nameLoading: false,
+      nameError: '',
+
+      parseNames() {
+        if (!this.nameInput.trim()) return [];
+        return this.nameInput.split(/[\n,]+/)
+          .map(function (s) { return s.trim().toLowerCase(); })
           .filter(function (s) { return s.length > 0; });
+      },
+
+      async submitNames(action) {
+        this.nameError = '';
+        var names = this.parseNames();
+        if (names.length === 0) { this.nameError = 'At least one name is required'; return; }
+        if (names.length > 100) { this.nameError = 'Maximum 100 names at once'; return; }
+        var bad = names.filter(function (n) { return !/^[a-z0-9_-]{1,51}$/.test(n); });
+        if (bad.length) {
+          this.nameError = 'Invalid name' + (bad.length > 1 ? 's' : '') + ' (1-51 chars, a-z 0-9 _ -): ' + bad.slice(0, 3).join(', ');
+          return;
+        }
+        var verb = action === 'block' ? 'Block' : 'Unblock';
+        if (!window.confirm(verb + ' ' + names.length + ' ArNS name' + (names.length > 1 ? 's' : '') + '?\n\n' + names.join('\n'))) return;
+
+        this.nameLoading = true;
+        try {
+          var endpoint = action === 'block' ? '/api/admin/block-name' : '/api/admin/unblock-name';
+          var single = names.length === 1;
+          var payload;
+          if (action === 'block') {
+            payload = single ? { name: names[0], reason: this.nameReason }
+                             : { names: names, reason: this.nameReason };
+          } else {
+            payload = single ? { name: names[0] } : { names: names };
+          }
+          var resp = await api(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!resp.ok) {
+            var errData = await resp.json().catch(function () { return {}; });
+            throw new Error(errData.detail || 'Request failed (HTTP ' + resp.status + ')');
+          }
+          var result = await resp.json();
+          var okField = action === 'block' ? 'blocked' : 'unblocked';
+          var okCount = result.results
+            ? result.results.filter(function (r) { return r[okField]; }).length
+            : (result[okField] ? 1 : 0);
+          var total = result.results ? result.results.length : 1;
+          Alpine.store('toast').show(
+            verb + 'ed ' + okCount + '/' + total + ' name' + (total > 1 ? 's' : ''),
+            okCount === total ? 'success' : 'error'
+          );
+          this.nameInput = '';
+          this.nameReason = '';
+        } catch (e) {
+          this.nameError = e.message || 'Request failed';
+          Alpine.store('toast').show(verb + ' failed: ' + (e.message || 'Unknown error'), 'error');
+        }
+        this.nameLoading = false;
       },
 
       validateTxIds() {

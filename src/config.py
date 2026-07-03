@@ -60,6 +60,8 @@ class Settings:
     rule_obfuscated_loader: bool = True
     rule_fake_challenge: bool = True
     rule_credential_kit: bool = True
+    rule_external_script_drainer: bool = True
+    rule_drainer_loader: bool = True
 
     # Content scanner toggles
     scanner_example_image: bool = False
@@ -137,7 +139,16 @@ class Settings:
     slack_bot_token: str = ""
     slack_channel_id: str = ""
     slack_signing_secret: str = ""
+    slack_app_token: str = ""  # xapp- app token for Socket Mode button handling
     slack_notification_threshold: str = "malicious"  # or "suspicious"
+
+    # Email intake (M365)
+    email_intake_enabled: bool = False
+    email_intake_tenant_id: str = ""
+    email_intake_client_id: str = ""
+    email_intake_client_secret: str = ""
+    email_intake_mailbox: str = ""  # e.g., abuse@ar.io
+    email_intake_poll_interval: int = 60  # seconds
 
 
 def load_settings() -> Settings:
@@ -322,6 +333,7 @@ def load_settings() -> Settings:
     slack_bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
     slack_channel_id = os.environ.get("SLACK_CHANNEL_ID", "")
     slack_signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
+    slack_app_token = os.environ.get("SLACK_APP_TOKEN", "")
     slack_notification_threshold = os.environ.get(
         "SLACK_NOTIFICATION_THRESHOLD", "malicious"
     )
@@ -342,6 +354,38 @@ def load_settings() -> Settings:
             "SLACK_SIGNING_SECRET is required when SLACK_ENABLED=true "
             "(needed to verify Slack button callbacks)"
         )
+
+    # Email intake (M365) settings
+    email_intake_enabled = (
+        os.environ.get("EMAIL_INTAKE_ENABLED", "false").lower() == "true"
+    )
+    email_intake_tenant_id = os.environ.get("EMAIL_INTAKE_TENANT_ID", "")
+    email_intake_client_id = os.environ.get("EMAIL_INTAKE_CLIENT_ID", "")
+    email_intake_client_secret = os.environ.get("EMAIL_INTAKE_CLIENT_SECRET", "")
+    email_intake_mailbox = os.environ.get("EMAIL_INTAKE_MAILBOX", "")
+    email_intake_poll_interval = int(
+        os.environ.get("EMAIL_INTAKE_POLL_INTERVAL", "60")
+    )
+
+    if email_intake_enabled:
+        if not email_intake_tenant_id:
+            raise ValueError(
+                "EMAIL_INTAKE_TENANT_ID is required when EMAIL_INTAKE_ENABLED=true"
+            )
+        if not email_intake_client_id:
+            raise ValueError(
+                "EMAIL_INTAKE_CLIENT_ID is required when EMAIL_INTAKE_ENABLED=true"
+            )
+        if not email_intake_client_secret:
+            raise ValueError(
+                "EMAIL_INTAKE_CLIENT_SECRET is required when EMAIL_INTAKE_ENABLED=true"
+            )
+        if not email_intake_mailbox:
+            raise ValueError(
+                "EMAIL_INTAKE_MAILBOX is required when EMAIL_INTAKE_ENABLED=true"
+            )
+    if email_intake_poll_interval < 10:
+        raise ValueError("EMAIL_INTAKE_POLL_INTERVAL must be >= 10")
 
     return Settings(
         gateway_url=gateway_url.rstrip("/"),
@@ -374,6 +418,12 @@ def load_settings() -> Settings:
         rule_fake_challenge=os.environ.get("RULE_FAKE_CHALLENGE", "true").lower()
         == "true",
         rule_credential_kit=os.environ.get("RULE_CREDENTIAL_KIT", "true").lower()
+        == "true",
+        rule_external_script_drainer=os.environ.get(
+            "RULE_EXTERNAL_SCRIPT_DRAINER", "true"
+        ).lower()
+        == "true",
+        rule_drainer_loader=os.environ.get("RULE_DRAINER_LOADER", "true").lower()
         == "true",
         scanner_example_image=os.environ.get(
             "SCANNER_EXAMPLE_IMAGE", "false"
@@ -423,5 +473,12 @@ def load_settings() -> Settings:
         slack_bot_token=slack_bot_token,
         slack_channel_id=slack_channel_id,
         slack_signing_secret=slack_signing_secret,
+        slack_app_token=slack_app_token,
         slack_notification_threshold=slack_notification_threshold,
+        email_intake_enabled=email_intake_enabled,
+        email_intake_tenant_id=email_intake_tenant_id,
+        email_intake_client_id=email_intake_client_id,
+        email_intake_client_secret=email_intake_client_secret,
+        email_intake_mailbox=email_intake_mailbox,
+        email_intake_poll_interval=email_intake_poll_interval,
     )

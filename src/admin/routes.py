@@ -19,6 +19,9 @@ logger = logging.getLogger("scanner.admin")
 _BASE64URL_43 = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _HASH_PATTERN = re.compile(r"^[A-Za-z0-9_+/=-]{1,64}$")
 _MAX_ID_LENGTH = 128
+# ArNS names: gateway allows a non-empty string up to 51 chars. Accept base
+# names and undernames ([a-z0-9_-]); we normalise to lowercase before sending.
+_ARNS_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,51}$")
 
 
 def _is_valid_content_id(value: object) -> bool:
@@ -595,6 +598,122 @@ def build_admin_router(app_state) -> APIRouter:
         if status == "started":
             logger.info("backfill_trigger_manual")
         return {"status": status}
+    def _parse_names(body: dict) -> list[str]:
+        names_raw = body.get("names", [])
+        single = body.get("name", "")
+        if single and not names_raw:
+            names_raw = [single]
+        if not isinstance(names_raw, list) or len(names_raw) == 0:
+            raise HTTPException(status_code=400, detail="name or names is required")
+        if len(names_raw) > 100:
+            raise HTTPException(
+                status_code=400, detail="Maximum 100 names per request"
+            )
+        return names_raw
+
+    @router.post("/api/admin/block-name")
+    async def block_name(request: Request, _key: str = Depends(auth)):
+        """Block resolution of one or more ArNS names on the gateway."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        reason = str(body.get("reason", ""))[:300]
+        names_raw = _parse_names(body)
+        single_name = body.get("name", "")
+
+        gateway = _state.gateway
+        notes_text = f"Manual block: {reason}" if reason else "Manual block"
+        results, errors = [], []
+        for raw in names_raw:
+            name = str(raw).strip().lower()
+            if not _ARNS_NAME_RE.match(name):
+                errors.append({
+                    "name": str(raw)[:60],
+                    "error": "Invalid ArNS name (1-51 chars, [a-z0-9_-])",
+                })
+                continue
+            blocked = False
+            try:
+                blocked = await gateway.block_name(name, notes=notes_text)
+            except Exception:
+                logger.exception("manual_block_name_error", extra={"arns_name": name})
+            results.append({"name": name, "blocked": blocked})
+
+        logger.info(
+            "manual_block_name",
+            extra={
+                "count": len(results),
+                "reason": reason,
+                "blocked": sum(1 for r in results if r["blocked"]),
+                "errors": len(errors),
+            },
+        )
+
+        if single_name and not body.get("names"):
+            if not results:
+                raise HTTPException(status_code=400, detail="Invalid ArNS name")
+            return {
+                "status": "blocked",
+                "name": results[0]["name"],
+                "blocked": results[0]["blocked"],
+            }
+        return {
+            "status": "blocked",
+            "results": results,
+            "succeeded": len(results),
+            "failed": len(errors),
+            "errors": errors,
+        }
+
+    @router.post("/api/admin/unblock-name")
+    async def unblock_name(request: Request, _key: str = Depends(auth)):
+        """Unblock resolution of one or more ArNS names on the gateway."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        names_raw = _parse_names(body)
+        single_name = body.get("name", "")
+
+        gateway = _state.gateway
+        results, errors = [], []
+        for raw in names_raw:
+            name = str(raw).strip().lower()
+            if not _ARNS_NAME_RE.match(name):
+                errors.append({"name": str(raw)[:60], "error": "Invalid ArNS name"})
+                continue
+            unblocked = False
+            try:
+                unblocked = await gateway.unblock_name(name)
+            except Exception:
+                logger.exception("manual_unblock_name_error", extra={"arns_name": name})
+            results.append({"name": name, "unblocked": unblocked})
+
+        logger.info(
+            "manual_unblock_name",
+            extra={
+                "count": len(results),
+                "unblocked": sum(1 for r in results if r["unblocked"]),
+                "errors": len(errors),
+            },
+        )
+
+        if single_name and not body.get("names"):
+            if not results:
+                raise HTTPException(status_code=400, detail="Invalid ArNS name")
+            return {
+                "status": "unblocked",
+                "name": results[0]["name"],
+                "unblocked": results[0]["unblocked"],
+            }
+        return {
+            "status": "unblocked",
+            "results": results,
+            "succeeded": len(results),
+            "failed": len(errors),
+            "errors": errors,
+        }
 
     @router.get("/api/admin/history")
     async def history_list(

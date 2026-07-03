@@ -101,17 +101,79 @@ Overrides persist in the database across container restarts.
 
 ### Manual Block
 
-The **Manual Block** tab lets you block any Arweave transaction by its 43-character TX ID. Use this for:
+The **Manual Block** tab lets you block content the scanner hasn't detected. Use this for:
 
 - Content reported through external channels (e.g., abuse reports, community flags)
 - Known-bad transactions identified outside the scanner's detection rules
 - Emergency blocks while investigating suspicious content
 
-Manual blocks **always call the gateway block API**, regardless of whether the scanner is in dry-run or enforce mode. This is intentional — a manual block is an explicit operator decision, not an automated action.
+You can block by:
 
-To undo a manual block, find it in the Review Queue (filter by "confirmed" status) and use the **Revert** action. This restores the previous verdict and sends an unblock request to the gateway.
+- **Arweave TX ID or IPFS CID** — one or many (paste up to 100, one per line).
+- **Sandbox subdomain** — the base32 hostname that Google Safe Browsing and the scanner report content by (e.g. `k7nom5…lfq.arweave.net`). The UI auto-decodes it to the 43-character TX ID before blocking, and shows the resolved ID in the confirm dialog.
+- **ArNS name** — the "Block ArNS Name" section blocks/unblocks name *resolution* on the gateway (`POST /api/admin/block-name` / `unblock-name`, single or up to 100 names ≤ 51 chars). This is a different gateway mechanism than content blocks; because ArNS name blocks aren't TX-ID-keyed, they are **not** shown in the TX-ID Manual Blocks history — the record lives on the gateway.
 
-Manual blocks are recorded with `source=manual` in the database. They appear in Scan History (filterable by "manual" source) but are **not exported** via the verdict feed, so they don't propagate to peer scanners.
+Manual content blocks **always call the gateway block API**, regardless of whether the scanner is in dry-run or enforce mode. This is intentional — a manual block is an explicit operator decision, not an automated action.
+
+To undo a manual content block, find it in the Review Queue (filter by "confirmed" status) and use the **Revert** action. This restores the previous verdict and sends an unblock request to the gateway. To undo an ArNS name block, use the **Unblock** button in the Block ArNS Name section.
+
+Manual content blocks are recorded with `source=manual` in the database. They appear in Scan History (filterable by "manual" source) but are **not exported** via the verdict feed, so they don't propagate to peer scanners.
+
+## Email Intake (M365)
+
+When `EMAIL_INTAKE_ENABLED=true`, the scanner polls a Microsoft 365 mailbox for abuse reports and automatically extracts Arweave TX IDs for scanning.
+
+### Setup
+
+1. Create an Azure AD app registration with `Mail.ReadWrite` application permission
+2. Restrict access to the abuse mailbox only using an Exchange Online `ApplicationAccessPolicy`
+3. Set the `EMAIL_INTAKE_*` environment variables (tenant ID, client ID, client secret, mailbox address)
+
+### How it works
+
+The poller runs every `EMAIL_INTAKE_POLL_INTERVAL` seconds (default 60):
+1. Fetches unread emails from the mailbox via Microsoft Graph API
+2. Extracts TX IDs using three strategies: gateway URL parsing, base32 sandbox subdomain decoding, and standalone TX ID matching
+3. Enqueues extracted TX IDs for scanning through the normal pipeline
+4. Sends a Slack summary if notifications are enabled
+5. Marks processed emails as read
+
+If extraction finds no TX IDs, a warning is sent to Slack so operators can check manually. Emails are only marked as read if processing succeeded — failures are retried on the next poll.
+
+### Monitoring
+
+Check email intake status in the scanner logs:
+```bash
+docker logs ar-io-content-scanner | grep -i "email\|poll\|intake"
+```
+
+## ML Model Retraining
+
+The XGBoost model improves over time as operators classify content:
+
+- **Confirm & Block** → exports HTML to `/app/data/training/phishing/`
+- **Classify Neutral** → exports HTML to `/app/data/training/neutral/`
+
+### Retraining procedure
+
+```bash
+# 1. Copy training data from the running scanner
+docker cp ar-io-content-scanner:/app/data/training/phishing ./data/phishing
+docker cp ar-io-content-scanner:/app/data/training/neutral ./data/neutral
+
+# 2. Train the model
+cd training
+python3 train.py
+
+# 3. Deploy the new model
+cp xgboost_model.pkl ../xgboost_model.pkl
+cp model-manifest.json ../model-manifest.json
+# Rebuild and deploy the container image
+```
+
+The training script imports features directly from `src/ml/features.py` — there is no separate training copy. After training, a `model-manifest.json` is generated with accuracy metrics, and the classifier logs this manifest on startup.
+
+See `training/README.md` for full details.
 
 ## Monitoring
 

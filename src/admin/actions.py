@@ -26,10 +26,13 @@ async def confirm_block(
     gateway: GatewayClient,
     scanner_mode: str,
     notes: str = "",
+    training_data_dir: str = "/app/data/training",
 ) -> ActionResult:
     """Confirm content as malicious and block it.
 
     Shared logic used by both the admin API and Slack action handler.
+    Also exports content to the phishing training data directory for
+    future ML model retraining.
     """
     verdict = db.get_verdict(content_hash)
     if verdict is None:
@@ -51,11 +54,43 @@ async def confirm_block(
     blocked = False
     if scanner_mode == "enforce":
         rules = json.loads(verdict.matched_rules or "[]")
+        # Propagate a meaningful block reason to the gateway. Slack/dashboard
+        # confirmations pass `notes` (e.g. "Confirmed via Slack"); enrich it
+        # with the triggering rules (or the verdict when no rules matched) so
+        # the gateway's audit trail distinguishes a human confirm from an
+        # automatic block. Empty notes -> None so block_data keeps its own
+        # "Auto-blocked: <rules>" default.
+        detail = ", ".join(rules) if rules else verdict.verdict.value
+        gw_notes = f"{notes} ({detail})" if notes else None
         blocked = await gateway.block_data(
-            verdict.tx_id, content_hash, rules
+            verdict.tx_id, content_hash, rules, notes=gw_notes
         )
         if blocked:
             db.mark_blocked(content_hash)
+
+    # Export to phishing training data for ML retraining
+    try:
+        phishing_dir = os.path.join(training_data_dir, "phishing")
+        os.makedirs(phishing_dir, exist_ok=True)
+        content = await gateway.fetch_content(verdict.tx_id)
+        if content:
+            export_path = os.path.join(phishing_dir, f"{content_hash}.html")
+            with open(export_path, "wb") as f:
+                f.write(content)
+            logger.info(
+                "training_data_exported",
+                extra={
+                    "content_hash": content_hash,
+                    "label": "phishing",
+                    "path": export_path,
+                },
+            )
+    except Exception:
+        logger.warning(
+            "training_data_export_failed",
+            extra={"content_hash": content_hash, "label": "phishing"},
+            exc_info=True,
+        )
 
     logger.info(
         "action_confirm",
@@ -144,22 +179,22 @@ async def classify_neutral(
     if not result.success:
         return result
 
-    # Export to training data directory
+    # Export to neutral training data directory for ML retraining
     try:
         verdict = db.get_verdict(content_hash)
         if verdict and verdict.tx_id:
-            training_dir = training_data_dir
-            os.makedirs(training_dir, exist_ok=True)
-            # Fetch content for training export
+            neutral_dir = os.path.join(training_data_dir, "neutral")
+            os.makedirs(neutral_dir, exist_ok=True)
             content = await gateway.fetch_content(verdict.tx_id)
             if content:
-                export_path = os.path.join(training_dir, f"{content_hash}.html")
+                export_path = os.path.join(neutral_dir, f"{content_hash}.html")
                 with open(export_path, "wb") as f:
                     f.write(content)
                 logger.info(
                     "training_data_exported",
                     extra={
                         "content_hash": content_hash,
+                        "label": "neutral",
                         "path": export_path,
                     },
                 )

@@ -1,51 +1,68 @@
-# ML Model Training Pipeline
-
-Scripts for training and managing the XGBoost phishing detection model.
+# ML Model Retraining
 
 ## Training Data
 
-Training data is stored in S3 (`s3://ario-infra-ml-training-data/`) with this structure:
+Training data accumulates in the content-scanner's Docker volume when operators
+use Slack buttons or the admin dashboard:
 
 ```
-data/
-  neutral/       # Legitimate HTML files
-  phishing/      # Confirmed phishing HTML files
-  uncategorized/  # New samples awaiting classification
-    html/
-    jpeg/
+/app/data/training/
+├── phishing/     ← "Confirm & Block" button
+└── neutral/      ← "Classify Neutral" button
 ```
 
-### S3 Scripts
+### Collecting training data
 
-- `s3sync.sh` — Download training data from S3
-- `s3move.sh` — Move categorized files from uncategorized to their target folder
-- `s3remove.sh` — Remove a specific TX ID from uncategorized data
-
-## Training
+Copy from the running scanner to your local machine:
 
 ```bash
-# 1. Download training data
-./s3sync.sh
+# From the node running the content-scanner
+docker cp ar-io-content-scanner:/app/data/training/phishing ./data/phishing
+docker cp ar-io-content-scanner:/app/data/training/neutral ./data/neutral
+```
 
-# 2. Train the model (outputs xgboost_model.pkl)
+Or place existing labeled HTML files directly in `data/phishing/` and `data/neutral/`.
+
+## Retraining
+
+```bash
+cd training
 python3 train.py
-
-# 3. Copy the model to the project root
-cp xgboost_model.pkl ../xgboost_model.pkl
 ```
 
-`train.py` performs GridSearchCV over learning rate, max depth, and n_estimators, then trains the final model on the full dataset. It also trains a Naive Bayes text model for comparison (not used in production).
+This will:
+1. Load HTML files from `data/phishing/` and `data/neutral/`
+2. Extract 17 features using the production module (`src/ml/features.py`)
+3. Perform GridSearchCV hyperparameter tuning (27 combinations, 5-fold CV)
+4. Train the final model on the full dataset
+5. Evaluate on a 20% holdout test set
+6. Save `xgboost_model.pkl` and `model-manifest.json`
+7. Verify the model loads correctly in the production Booster format
 
-## Classifying New Samples
+## Deploying the new model
 
 ```bash
-# Classify uncategorized HTML files
-python3 classify.py
+# Copy to project root
+cp xgboost_model.pkl ../xgboost_model.pkl
+cp model-manifest.json ../model-manifest.json
+
+# Rebuild and deploy the container image
+# The classifier logs the manifest on startup so you can verify the new model
 ```
 
-## Feature Vector
+## Classifying uncategorized samples
 
-The model uses 17 engineered features (defined in `extract_features.py`). These must stay in sync with `src/ml/features.py` in the main codebase — any changes to features require retraining.
+```bash
+# Place HTML files in data/uncategorized/html/
+python3 classify.py
+# Prints predictions for suspected phishing files
+```
+
+## Feature vector
+
+The model uses 17 engineered features defined in `src/ml/features.py`. The training
+script imports directly from this production module — there is no separate training
+copy. Any change to features requires retraining.
 
 | # | Feature | Description |
 |---|---------|-------------|

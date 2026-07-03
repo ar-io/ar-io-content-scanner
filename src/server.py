@@ -148,6 +148,21 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "(no TX ID lookup available)."
             )
 
+    # Email intake (M365 poller)
+    email_poller = None
+    if settings.email_intake_enabled:
+        from src.email.m365_poller import M365EmailPoller
+
+        email_poller = M365EmailPoller(
+            tenant_id=settings.email_intake_tenant_id,
+            client_id=settings.email_intake_client_id,
+            client_secret=settings.email_intake_client_secret,
+            mailbox=settings.email_intake_mailbox,
+            poll_interval=settings.email_intake_poll_interval,
+            db=db,
+            notifier=notifier,
+        )
+
     pool = WorkerPool(
         scanner, db, concurrency=settings.scanner_workers,
         backfill=backfill, feed_poller=feed_poller,
@@ -162,6 +177,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if screenshot:
             await screenshot.startup()
         await pool.start()
+        if email_poller:
+            await email_poller.start()
         logger.info(
             "Content scanner started",
             extra={
@@ -182,15 +199,40 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "content_scanners": registry.scanner_names,
                 "webhook_events": sorted(settings.webhook_events),
                 "slack_notifications": settings.slack_enabled,
+                "slack_socket_mode": bool(settings.slack_app_token),
+                "email_intake": settings.email_intake_enabled,
             },
         )
+
+        # Slack Socket Mode: handle button clicks over an outbound WebSocket
+        # (no public callback URL needed). Falls back to the HTTP request-URL
+        # endpoint (POST /api/slack/actions) when SLACK_APP_TOKEN is unset.
+        slack_socket = None
+        if settings.slack_enabled and settings.slack_app_token:
+            from src.notifications.slack_socket import SlackSocketListener
+
+            slack_socket = SlackSocketListener(
+                app_token=settings.slack_app_token,
+                bot_token=settings.slack_bot_token,
+                app_state=app.state,
+            )
+            try:
+                await slack_socket.start()
+            except Exception:
+                logger.error("slack_socket_start_failed", exc_info=True)
+                slack_socket = None
+
         yield
+        if email_poller:
+            await email_poller.stop()
         logger.info("Shutting down worker pool...")
         try:
             await asyncio.wait_for(pool.stop(), timeout=10)
         except asyncio.TimeoutError:
             logger.warning("Worker pool shutdown timed out after 10s")
         await safe_browsing.close()
+        if slack_socket:
+            await slack_socket.close()
         if feed_client:
             await feed_client.close()
         if notifier:
