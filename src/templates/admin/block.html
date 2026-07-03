@@ -2,7 +2,7 @@
 <div x-data="blockTab" x-init="init()" @close-modal.window="if (!loading) confirmDialog.show = false">
   <div class="section-header">
     <h2>Manual Block</h2>
-    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block content by Arweave TX ID or IPFS CID. Paste one or more IDs, one per line. Blocks immediately regardless of scanner mode.</p>
+    <p style="color: var(--color-gray); font-size: 0.85rem; margin-top: 4px;">Block content by Arweave TX ID, IPFS CID, or sandbox subdomain (auto-decoded to its TX ID). Paste one or more IDs, one per line. Blocks immediately regardless of scanner mode.</p>
   </div>
 
   <template x-if="error">
@@ -17,7 +17,7 @@
     <div style="margin-bottom: 16px;">
       <label style="font-size: 0.85rem; font-weight: 600; color: var(--color-gray); display: block; margin-bottom: 6px;">Content ID(s)</label>
       <textarea x-model="txInput" :disabled="loading" class="block-txids"
-        placeholder="Paste one or more IDs, one per line&#10;Arweave: xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ&#10;IPFS:    bafkreigbk3hjz6oyiywqf7eknthwc2osvt5xi6b6igwljn2qrxkthqgrp4"
+        placeholder="Paste one or more IDs, one per line&#10;Arweave: xyhqlo9Aj6xcuUHi0fN8AWeWkUl7T-b4IF8IKCUB6sZ&#10;IPFS:    bafkreigbk3hjz6oyiywqf7eknthwc2osvt5xi6b6igwljn2qrxkthqgrp4&#10;Sandbox: k7nom5kcnmhqnerlthdmk6jlf445ttqolvnmfyhmb57zwknzelfq(.arweave.net)"
         @input="validationError = ''"></textarea>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; min-height: 20px;">
         <span x-show="validationError" style="color: var(--color-red); font-size: 0.8rem;" x-text="validationError"></span>
@@ -33,6 +33,39 @@
     <button class="btn btn-danger" @click="promptBlock()" :disabled="parseTxIds().length === 0 || loading">
       <span x-text="parseTxIds().length <= 1 ? 'Block Content' : 'Block ' + parseTxIds().length + ' Items'"></span>
     </button>
+  </div>
+
+  <!-- Block ArNS Name -->
+  <div style="margin-bottom: 32px; border-top: 1px solid var(--color-border); padding-top: 24px;">
+    <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;">Block ArNS Name</h3>
+    <p style="color: var(--color-gray); font-size: 0.85rem; margin: 4px 0 12px;">Block resolution of one or more ArNS names (max 51 chars each, a-z 0-9 _ -). Paste one per line. Reversible with Unblock.</p>
+
+    <template x-if="nameError">
+      <div class="error-banner">
+        <span x-text="nameError"></span>
+        <button @click="nameError = ''" class="btn btn-sm btn-outline">Dismiss</button>
+      </div>
+    </template>
+
+    <div style="margin-bottom: 12px;">
+      <textarea x-model="nameInput" :disabled="nameLoading" class="block-txids" style="min-height: 70px;"
+        placeholder="Paste one or more ArNS names, one per line&#10;e.g. some-scam-name"
+        @input="nameError = ''"></textarea>
+      <div style="text-align: right; min-height: 18px;">
+        <span style="font-size: 0.75rem; color: var(--color-gray);" x-show="parseNames().length > 0"
+          x-text="parseNames().length === 1 ? '1 name' : parseNames().length + ' names'"></span>
+      </div>
+    </div>
+    <div style="margin-bottom: 12px;">
+      <input type="text" x-model="nameReason" :disabled="nameLoading" maxlength="300" class="block-reason"
+        placeholder="Reason (optional) — e.g. impersonation, phishing">
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-danger" @click="submitNames('block')" :disabled="parseNames().length === 0 || nameLoading">
+        <span x-text="parseNames().length <= 1 ? 'Block Name' : 'Block ' + parseNames().length + ' Names'"></span>
+      </button>
+      <button class="btn btn-outline" @click="submitNames('unblock')" :disabled="parseNames().length === 0 || nameLoading">Unblock</button>
+    </div>
   </div>
 
   <!-- Manual Blocks History -->

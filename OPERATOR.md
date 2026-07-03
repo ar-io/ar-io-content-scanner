@@ -101,17 +101,23 @@ Overrides persist in the database across container restarts.
 
 ### Manual Block
 
-The **Manual Block** tab lets you block any Arweave transaction by its 43-character TX ID. Use this for:
+The **Manual Block** tab lets you block content the scanner hasn't detected. Use this for:
 
 - Content reported through external channels (e.g., abuse reports, community flags)
 - Known-bad transactions identified outside the scanner's detection rules
 - Emergency blocks while investigating suspicious content
 
-Manual blocks **always call the gateway block API**, regardless of whether the scanner is in dry-run or enforce mode. This is intentional — a manual block is an explicit operator decision, not an automated action.
+You can block by:
 
-To undo a manual block, find it in the Review Queue (filter by "confirmed" status) and use the **Revert** action. This restores the previous verdict and sends an unblock request to the gateway.
+- **Arweave TX ID or IPFS CID** — one or many (paste up to 100, one per line).
+- **Sandbox subdomain** — the base32 hostname that Google Safe Browsing and the scanner report content by (e.g. `k7nom5…lfq.arweave.net`). The UI auto-decodes it to the 43-character TX ID before blocking, and shows the resolved ID in the confirm dialog.
+- **ArNS name** — the "Block ArNS Name" section blocks/unblocks name *resolution* on the gateway (`POST /api/admin/block-name` / `unblock-name`, single or up to 100 names ≤ 51 chars). This is a different gateway mechanism than content blocks; because ArNS name blocks aren't TX-ID-keyed, they are **not** shown in the TX-ID Manual Blocks history — the record lives on the gateway.
 
-Manual blocks are recorded with `source=manual` in the database. They appear in Scan History (filterable by "manual" source) but are **not exported** via the verdict feed, so they don't propagate to peer scanners.
+Manual content blocks **always call the gateway block API**, regardless of whether the scanner is in dry-run or enforce mode. This is intentional — a manual block is an explicit operator decision, not an automated action.
+
+To undo a manual content block, find it in the Review Queue (filter by "confirmed" status) and use the **Revert** action. This restores the previous verdict and sends an unblock request to the gateway. To undo an ArNS name block, use the **Unblock** button in the Block ArNS Name section.
+
+Manual content blocks are recorded with `source=manual` in the database. They appear in Scan History (filterable by "manual" source) but are **not exported** via the verdict feed, so they don't propagate to peer scanners.
 
 ## Monitoring
 

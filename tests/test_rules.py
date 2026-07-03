@@ -2,7 +2,9 @@
 
 from src.ml.features import parse_html
 from src.rules.credential_kit import CredentialKitRule
+from src.rules.drainer_loader import DrainerLoaderRule
 from src.rules.external_form import ExternalFormRule
+from src.rules.external_script_drainer import ExternalScriptDrainerRule
 from src.rules.fake_challenge import FakeChallengeRule
 from src.rules.obfuscated_loader import ObfuscatedLoaderRule
 from src.rules.seed_phrase import SeedPhraseRule
@@ -12,6 +14,12 @@ from tests.fixtures import (
     BRACKET_NOTATION_EXFIL,
     CLEAN_HTML,
     EXTERNAL_FORM_PHISHING,
+    EXTERNAL_SCRIPT_DRAINER,
+    INLINE_DRAINER_LOADER,
+    LEGIT_CDN_WALLET_DAPP,
+    LEGIT_SPA_FETCH_CONFIG,
+    LEGIT_SPA_SHELL,
+    WALLET_ARTICLE_EXTERNAL_ANALYTICS,
     IMAGE_PIXEL_EXFIL,
     MINIMAL_HTML,
     OBFUSCATED_BRACKET_NOTATION,
@@ -754,3 +762,92 @@ class TestCredentialKitRule:
         <a href="https://login.microsoftonline.com/outlook">continue</a></body></html>"""
         soup = parse_html(html)
         assert self.rule.evaluate(html, soup).triggered is False
+
+
+class TestExternalScriptDrainerRule:
+    def setup_method(self):
+        self.rule = ExternalScriptDrainerRule()
+
+    def test_triggers_on_external_script_drainer(self):
+        soup = parse_html(EXTERNAL_SCRIPT_DRAINER)
+        result = self.rule.evaluate(EXTERNAL_SCRIPT_DRAINER, soup)
+        assert result.triggered is True
+        assert result.rule_name == "external-script-drainer"
+        assert result.signals["external_script_hosts"]  # non-empty
+
+    def test_clean_page_does_not_trigger(self):
+        soup = parse_html(CLEAN_HTML)
+        result = self.rule.evaluate(CLEAN_HTML, soup)
+        assert result.triggered is False
+
+    def test_legit_cdn_wallet_dapp_does_not_trigger(self):
+        # Wallet interaction is real, but the script is on an allowlisted CDN.
+        soup = parse_html(LEGIT_CDN_WALLET_DAPP)
+        result = self.rule.evaluate(LEGIT_CDN_WALLET_DAPP, soup)
+        assert result.triggered is False
+
+    def test_article_mentioning_wallets_does_not_trigger(self):
+        # External analytics script + prose brand mentions, no active wallet
+        # interaction -> must not trigger (precision).
+        soup = parse_html(WALLET_ARTICLE_EXTERNAL_ANALYTICS)
+        result = self.rule.evaluate(
+            WALLET_ARTICLE_EXTERNAL_ANALYTICS, soup
+        )
+        assert result.triggered is False
+
+    def test_external_script_without_wallet_context_does_not_trigger(self):
+        html = """<html><head><title>Page</title></head><body>
+        <script src="https://weird-host.example/thing.js"></script>
+        <p>Just a normal page with an external widget.</p>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False  # no wallet/RPC signal
+
+    def test_wallet_context_without_external_script_does_not_trigger(self):
+        html = """<html><head><title>App</title></head><body>
+        <script src="/local-bundle.js"></script>
+        <script>window.ethereum.request({method:"eth_requestAccounts"})</script>
+        </body></html>"""
+        soup = parse_html(html)
+        result = self.rule.evaluate(html, soup)
+        assert result.triggered is False  # script is same-origin/relative
+
+
+class TestDrainerLoaderRule:
+    def setup_method(self):
+        self.rule = DrainerLoaderRule()
+
+    def test_triggers_on_inline_drainer_loader(self):
+        soup = parse_html(INLINE_DRAINER_LOADER)
+        result = self.rule.evaluate(INLINE_DRAINER_LOADER, soup)
+        assert result.triggered is True
+        assert result.rule_name == "drainer-loader"
+        assert result.signals["cloak_shell"] is True
+        assert result.signals["remote_exec"] is True
+
+    def test_clean_page_does_not_trigger(self):
+        soup = parse_html(CLEAN_HTML)
+        result = self.rule.evaluate(CLEAN_HTML, soup)
+        assert result.triggered is False
+
+    def test_legit_spa_shell_does_not_trigger(self):
+        # Same "Loading…"/#root look, but loads its own bundle and has no
+        # fetch-inject-execute and no blockchain context.
+        soup = parse_html(LEGIT_SPA_SHELL)
+        result = self.rule.evaluate(LEGIT_SPA_SHELL, soup)
+        assert result.triggered is False
+
+    def test_legit_spa_fetch_config_does_not_trigger(self):
+        # fetch + innerHTML but no script-execution sink and no chain context.
+        soup = parse_html(LEGIT_SPA_FETCH_CONFIG)
+        result = self.rule.evaluate(LEGIT_SPA_FETCH_CONFIG, soup)
+        assert result.triggered is False
+
+    def test_external_script_drainer_shares_signals(self):
+        # The external-payload variant also presents as a cloak shell with
+        # RPC context, so drainer-loader corroborates it where the inline
+        # fetch/exec sink is present.
+        soup = parse_html(EXTERNAL_SCRIPT_DRAINER)
+        result = self.rule.evaluate(EXTERNAL_SCRIPT_DRAINER, soup)
+        assert result.signals["rpc_context"] is True

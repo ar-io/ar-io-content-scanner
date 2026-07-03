@@ -10,3 +10,4 @@ aiofiles>=23.0,<25
 uvicorn>=0.20,<1
 xgboost>=2.0,<3
 playwright>=1.40,<2
+slack_sdk>=3.27,<4

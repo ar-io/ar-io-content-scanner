@@ -199,9 +199,29 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "content_scanners": registry.scanner_names,
                 "webhook_events": sorted(settings.webhook_events),
                 "slack_notifications": settings.slack_enabled,
+                "slack_socket_mode": bool(settings.slack_app_token),
                 "email_intake": settings.email_intake_enabled,
             },
         )
+
+        # Slack Socket Mode: handle button clicks over an outbound WebSocket
+        # (no public callback URL needed). Falls back to the HTTP request-URL
+        # endpoint (POST /api/slack/actions) when SLACK_APP_TOKEN is unset.
+        slack_socket = None
+        if settings.slack_enabled and settings.slack_app_token:
+            from src.notifications.slack_socket import SlackSocketListener
+
+            slack_socket = SlackSocketListener(
+                app_token=settings.slack_app_token,
+                bot_token=settings.slack_bot_token,
+                app_state=app.state,
+            )
+            try:
+                await slack_socket.start()
+            except Exception:
+                logger.error("slack_socket_start_failed", exc_info=True)
+                slack_socket = None
+
         yield
         if email_poller:
             await email_poller.stop()
@@ -211,6 +231,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         except asyncio.TimeoutError:
             logger.warning("Worker pool shutdown timed out after 10s")
         await safe_browsing.close()
+        if slack_socket:
+            await slack_socket.close()
         if feed_client:
             await feed_client.close()
         if notifier:
