@@ -18,7 +18,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.ml.features import extract_features
 
 
+# Max file size for training samples (10MB). Larger files are likely not
+# HTML phishing pages and would waste memory during feature extraction.
+_MAX_TRAINING_FILE_BYTES = 10 * 1024 * 1024
+
+
 def process_file(filename):
+    size = os.path.getsize(filename)
+    if size > _MAX_TRAINING_FILE_BYTES:
+        raise ValueError(f"File too large ({size} bytes, max {_MAX_TRAINING_FILE_BYTES})")
+    if size == 0:
+        raise ValueError("Empty file")
     with open(filename, "r", encoding="utf-8") as file:
         content = file.read()
     features = extract_features(content)

@@ -80,12 +80,11 @@ class TestMLRoundtrip:
             for v in vector:
                 assert isinstance(v, (int, float, bool))
 
-    def test_xgbclassifier_model_loads_in_booster(self, tmp_path):
-        """Verify XGBClassifier.save_model() output loads in Booster (production path).
+    def test_booster_save_reload_consistency(self, tmp_path):
+        """Verify a saved Booster model produces identical predictions after reload.
 
-        This is the exact format train.py produces — XGBClassifier trains and saves,
-        but production loads with Booster. XGBoost 2.x uses the same JSON format
-        for both, so this should always work.
+        XGBoost 2.x uses JSON format for both Booster and XGBClassifier save/load,
+        so models are interchangeable. This test verifies save→load consistency.
         """
         features = extract_features("<html><body><p>test</p></body></html>").to_vector()
 
