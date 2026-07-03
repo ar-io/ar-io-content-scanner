@@ -150,6 +150,7 @@ class M365EmailPoller:
             tx_ids = extract_all_tx_ids(text_body, html_body)
 
             enqueued = 0
+            already_known = 0
             for tx_id in tx_ids:
                 if self.db.enqueue(
                     tx_id=tx_id,
@@ -158,6 +159,13 @@ class M365EmailPoller:
                     data_size=None,
                 ):
                     enqueued += 1
+                else:
+                    # enqueue returns False for both duplicates and DB errors.
+                    # Check if it's already in verdict cache (already scanned/blocked)
+                    # — if so, it's a known duplicate, not a failure.
+                    existing = self.db.get_verdict(tx_id)
+                    if existing is not None:
+                        already_known += 1
 
             logger.info(
                 "Processed abuse email",
@@ -211,15 +219,18 @@ class M365EmailPoller:
                         exc_info=True,
                     )
 
-            # Mark as read — but only if we successfully processed it.
-            # If TX IDs were found but none enqueued (DB errors), keep it
-            # unread so it's retried next poll. Emails with 0 TX IDs are
-            # still marked read (nothing to enqueue).
-            if not tx_ids or enqueued > 0:
+            # Mark as read if we successfully processed the email:
+            # - No TX IDs found (nothing to do)
+            # - Some TX IDs enqueued (new content to scan)
+            # - All TX IDs already known/blocked (duplicates, safe to skip)
+            # Only keep unread if TX IDs were found but NONE could be
+            # enqueued AND none are already known (real DB failure).
+            processed = enqueued + already_known
+            if not tx_ids or processed > 0:
                 await self._mark_as_read(token, msg_id)
             else:
                 logger.warning(
-                    "Skipping mark-as-read — TX IDs found but none enqueued",
+                    "Skipping mark-as-read — TX IDs found but none enqueued or known",
                     extra={"message_id": msg_id, "tx_ids": len(tx_ids)},
                 )
 

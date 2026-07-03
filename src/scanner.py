@@ -704,7 +704,17 @@ class Scanner:
                     self.db.mark_blocked(content_hash)
                 action = "blocked" if success else "block_failed"
             elif self.settings.scanner_mode == "enforce" and not content_hash:
-                action = "no_hash"
+                # No content hash (e.g., TX ID from email intake or tx-indexed
+                # webhook). Block by TX ID alone — the gateway's block endpoint
+                # accepts either id or hash. Use tx_id as the hash key for DB
+                # bookkeeping consistency (same approach as manual-block).
+                success = await self.gateway.block_data(
+                    tx_id, tx_id, result.matched_rules
+                )
+                self.metrics.record_block(success)
+                if success:
+                    self.db.mark_blocked(tx_id)
+                action = "blocked_by_id" if success else "block_failed"
             else:
                 action = "dry_run"
 
