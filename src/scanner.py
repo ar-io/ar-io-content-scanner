@@ -7,7 +7,12 @@ import re
 
 from bs4 import BeautifulSoup
 
-from src.archive import extract_singlefile_html, is_singlefile_archive
+from src.archive import (
+    ARCHIVE_MAX_FETCH_BYTES,
+    extract_singlefile_html,
+    is_singlefile_archive,
+    looks_like_singlefile_head,
+)
 from src.config import Settings
 from src.db import ScannerDB
 from src.gateway_client import GatewayClient
@@ -595,18 +600,36 @@ class Scanner:
             # self-extraction shell. Decode and scan the real content so rules
             # and ML see the actual page (fail-open: on any problem, keep the
             # wrapper). content_hash stays the wrapper's — we block the TX.
-            if self.settings.archive_decode_enabled and is_singlefile_archive(
-                content
+            #
+            # The archive's ZIP directory sits at the tail, which is usually
+            # past the normal MAX_SCAN_BYTES fetch cap. The `data-sfz` marker is
+            # in the head (already fetched), so detect a candidate cheaply, then
+            # re-fetch the full file to get the complete archive.
+            if (
+                self.settings.archive_decode_enabled
+                and looks_like_singlefile_head(content)
             ):
-                extracted = extract_singlefile_html(content)
-                if extracted is not None:
-                    logger.info(
-                        "archive_decoded",
-                        extra={"tx_id": tx_id, "wrapper_bytes": len(content),
-                               "extracted_bytes": len(extracted)},
+                archive_bytes = content
+                if len(content) >= self.settings.max_scan_bytes:
+                    # Content was capped — re-fetch fully to include the ZIP tail.
+                    full = await self.gateway.fetch_content(
+                        tx_id, max_bytes=ARCHIVE_MAX_FETCH_BYTES
                     )
-                    html = extracted
-                    self.metrics.record_archive_decode()
+                    if full is not None:
+                        archive_bytes = full
+                if is_singlefile_archive(archive_bytes):
+                    extracted = extract_singlefile_html(archive_bytes)
+                    if extracted is not None:
+                        logger.info(
+                            "archive_decoded",
+                            extra={
+                                "tx_id": tx_id,
+                                "wrapper_bytes": len(archive_bytes),
+                                "extracted_bytes": len(extracted),
+                            },
+                        )
+                        html = extracted
+                        self.metrics.record_archive_decode()
 
             loop = asyncio.get_running_loop()
             timeout_s = self.settings.scan_timeout_ms / 1000

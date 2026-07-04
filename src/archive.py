@@ -33,6 +33,26 @@ ARCHIVE_MAX_ENTRIES = 2000
 ARCHIVE_MAX_TOTAL_UNCOMPRESSED = 8 * 1024 * 1024  # 8 MB across all entries
 ARCHIVE_MAX_COMPRESSION_RATIO = 200  # per-entry uncompressed/compressed cap
 
+# Real SingleFileZ archives (bundled images/CSS) are typically larger than the
+# scanner's normal MAX_SCAN_BYTES fetch cap, so the ZIP directory at the tail
+# gets truncated. When the head marker is present we re-fetch the full file up
+# to this cap to get the complete archive.
+ARCHIVE_MAX_FETCH_BYTES = 12 * 1024 * 1024  # 12 MB
+
+
+def looks_like_singlefile_head(content: bytes) -> bool:
+    """Cheap head-only check: could this be a SingleFileZ archive?
+
+    Uses only the first 2 KB (HTML start + ``data-sfz`` marker), so it works
+    even when ``content`` was fetched under a byte cap that truncated the ZIP
+    tail. A True result means "candidate — fetch the full file and confirm with
+    is_singlefile_archive()".
+    """
+    if not content:
+        return False
+    head = content[:2048].lstrip().lower()
+    return head.startswith(_HTML_STARTS) and _SFZ_MARKER in content[:2048]
+
 
 def is_singlefile_archive(content: bytes) -> bool:
     """Cheap structural check: does this look like a SingleFileZ polyglot?

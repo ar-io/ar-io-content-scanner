@@ -20,6 +20,7 @@ from src.archive import (
     ARCHIVE_MAX_ENTRIES,
     extract_singlefile_html,
     is_singlefile_archive,
+    looks_like_singlefile_head,
 )
 from src.config import Settings
 from src.db import QueueRow, ScannerDB
@@ -190,3 +191,53 @@ class TestArchiveScanning:
         assert cached is not None
         assert cached.verdict == Verdict.CLEAN
         assert scanner.metrics.archive_decodes == 0
+
+    async def test_large_archive_refetched_past_scan_cap(self):
+        # THE REAL-WORLD CASE: a malicious archive larger than MAX_SCAN_BYTES.
+        # The first fetch is truncated (ZIP tail lost) so the head marker is
+        # present but is_singlefile_archive(truncated) is False. The scanner
+        # must re-fetch the full file to decode it — otherwise the phishing
+        # page hides behind the wrapper.
+        # Incompressible padding so the archive genuinely exceeds the cap
+        # (zeros would DEFLATE away to nothing).
+        full = make_singlefilez(
+            EXTERNAL_FORM_PHISHING,
+            extra_entries={"pad.bin": os.urandom(400_000)},
+        )
+        cap = 262144
+        assert len(full) > cap
+        truncated = full[:cap]
+        assert looks_like_singlefile_head(truncated) is True
+        assert is_singlefile_archive(truncated) is False  # tail lost
+
+        fd, db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        db = ScannerDB(db_path)
+        db.initialize()
+        s = _settings(max_scan_bytes=cap)
+        gateway = AsyncMock(spec=GatewayClient)
+
+        # Mock fetch: capped call returns truncated, uncapped call returns full.
+        async def fake_fetch(tx_id, max_bytes=None):
+            return full if (max_bytes and max_bytes > cap) else truncated
+        gateway.fetch_content = AsyncMock(side_effect=fake_fetch)
+
+        scanner = Scanner(s, db, gateway, RuleEngine(s), ScanMetrics())
+        await scanner.process_queue_item(_item())
+
+        cached = db.get_verdict("wrapperhash")
+        assert cached is not None
+        assert cached.verdict == Verdict.MALICIOUS  # decoded + detected
+        gateway.block_data.assert_called_once()
+        assert scanner.metrics.archive_decodes == 1
+        # Confirm the re-fetch actually happened with the larger cap.
+        assert any(
+            call.kwargs.get("max_bytes", 0) > cap
+            for call in gateway.fetch_content.call_args_list
+        )
+
+    async def test_non_archive_does_not_trigger_refetch(self):
+        # A normal page must not cause a second (expensive) full fetch.
+        scanner, db, gateway = _make_scanner(CLEAN_HTML.encode())
+        await scanner.process_queue_item(_item())
+        assert gateway.fetch_content.call_count == 1
