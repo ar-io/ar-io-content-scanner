@@ -134,6 +134,27 @@ def is_html_content_type(content_type: str | None) -> bool | None:
     return False
 
 
+# Marker text the gateway serves for content that is already blocked by this
+# node's content policy. Re-fetching a blocked TX (via email intake, webhooks,
+# or backfill) returns this tiny notice page instead of the original content —
+# scanning it produces self-referential false positives (the ML flags the notice
+# as suspicious). Detect and skip it.
+_BLOCK_NOTICE_MARKER = "blocked by this node's content policy"
+_BLOCK_NOTICE_MAX_BYTES = 2048
+
+
+def is_gateway_block_notice(html: str) -> bool:
+    """True if the HTML is the gateway's 'content blocked' notice page.
+
+    Size-guarded so a large legitimate page that merely quotes the phrase is
+    not skipped — the real notice is a few hundred bytes.
+    """
+    return (
+        len(html) <= _BLOCK_NOTICE_MAX_BYTES
+        and _BLOCK_NOTICE_MARKER in html.lower()
+    )
+
+
 class Scanner:
     def __init__(
         self,
@@ -546,6 +567,27 @@ class Scanner:
 
             # Parse and scan — run CPU-bound work off the event loop
             html = content.decode("utf-8", errors="replace")
+
+            # Skip the gateway's "content blocked" notice page. Re-fetching an
+            # already-blocked TX returns this instead of the original content;
+            # scanning it yields self-referential false positives.
+            if is_gateway_block_notice(html):
+                logger.debug(
+                    "scan_skipped",
+                    extra={"tx_id": tx_id, "reason": "gateway_block_notice"},
+                )
+                self.metrics.record_skip()
+                if content_hash:
+                    self.db.save_verdict(
+                        content_hash=content_hash,
+                        tx_id=tx_id,
+                        verdict=Verdict.SKIPPED,
+                        matched_rules="[]",
+                        ml_score=None,
+                        scanner_version=self.settings.scanner_version,
+                    )
+                return
+
             loop = asyncio.get_running_loop()
             timeout_s = self.settings.scan_timeout_ms / 1000
             soup: BeautifulSoup = await asyncio.wait_for(
