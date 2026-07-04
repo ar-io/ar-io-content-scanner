@@ -289,6 +289,22 @@ MINIMAL_HTML = """<html><body><p>Hello world</p></body></html>"""
 BINARY_PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 BINARY_JPEG_HEADER = b"\xff\xd8\xff\xe0" + b"\x00" * 100
 
+# The exact notice page the gateway serves for already-blocked content
+# (observed on ar-io-node). Re-fetching a blocked TX returns this.
+GATEWAY_BLOCK_NOTICE = (
+    "Requested content blocked by this node's content policy. "
+    "Blocked ID: Nf51jhi4k1g-Qv096MSlbt1YdKRTwe2UAf8ymENI_H0"
+)
+
+# A large, legitimate page that merely *quotes* the block-notice phrase in its
+# body — must NOT be treated as the notice page (size guard).
+LEGIT_PAGE_QUOTING_BLOCK_PHRASE = (
+    "<!DOCTYPE html><html><body><h1>Content Moderation FAQ</h1><p>"
+    + ("When a gateway serves a page \"blocked by this node's content policy\" "
+       "it means the operator flagged that transaction. " * 60)
+    + "</p></body></html>"
+)
+
 RTC_PEER_EXFIL = """<!DOCTYPE html>
 <html><head><title>Login</title></head>
 <body>
