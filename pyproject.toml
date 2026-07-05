@@ -1,6 +1,6 @@
 [project]
 name = "ar-io-content-scanner"
-version = "0.4.0"
+version = "0.5.0"
 description = "Content moderation scanner sidecar for ar.io gateways"
 requires-python = ">=3.11"
 
