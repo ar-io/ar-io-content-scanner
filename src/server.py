@@ -168,7 +168,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         backfill=backfill, feed_poller=feed_poller,
         safe_browsing=safe_browsing, gateway=gateway,
         settings=settings, metrics=metrics,
-        screenshot=screenshot,
+        screenshot=screenshot, notifier=notifier,
     )
 
     @asynccontextmanager

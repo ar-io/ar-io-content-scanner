@@ -352,6 +352,8 @@ Optionally, you can add a Google Safe Browsing API key to enable URL-level check
 
 A background loop checks your gateway domain against Google's Transparency Report every `SAFE_BROWSING_CHECK_INTERVAL` seconds. This detects site-level flags (the same status shown on [Google's Transparency Report](https://transparencyreport.google.com/safe-browsing/search)). Requires `GATEWAY_PUBLIC_URL` to be set.
 
+When `SLACK_ENABLED=true`, a domain flag also fires a **Slack alert** (independent of `SLACK_NOTIFICATION_THRESHOLD`, since a flagged gateway domain is always critical). The alert lists the threat types, a Transparency Report link, and the **recent malicious TX IDs on the domain that are the likely cause** — marked `🔴 Google-flagged` for any that Google's Lookup API independently confirms (requires `SAFE_BROWSING_API_KEY`). Alerts fire only on a flagged↔cleared state change, not every interval, so the channel isn't spammed while the domain stays flagged.
+
 ### URL-Level Checks (Optional, requires API key)
 
 To enable per-URL checks via the Lookup API v4:
