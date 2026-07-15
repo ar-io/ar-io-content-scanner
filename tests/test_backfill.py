@@ -255,7 +255,7 @@ class TestBackfillSweep:
         hash_str = make_hash_str(42)
         place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
 
-        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+        stats = asyncio.run(scanner.sweep())
 
         assert stats["malicious"] == 1
         assert stats["unresolved"] == 1
