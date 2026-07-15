@@ -29,7 +29,15 @@ class GatewayClient:
             base_url=gateway_url, timeout=timeout
         )
 
-    async def fetch_content(self, tx_id: str) -> bytes | None:
+    async def fetch_content(
+        self, tx_id: str, max_bytes: int | None = None
+    ) -> bytes | None:
+        """Fetch content, capped at ``max_bytes`` (defaults to self.max_bytes).
+
+        A larger cap is used to re-fetch SingleFile archives whose ZIP tail
+        falls beyond the normal scan cap.
+        """
+        cap = self.max_bytes if max_bytes is None else max_bytes
         path = gateway_fetch_path(tx_id)
         try:
             async with self._client.stream("GET", path) as resp:
@@ -46,7 +54,7 @@ class GatewayClient:
                 chunks = []
                 total = 0
                 async for chunk in resp.aiter_bytes(chunk_size=8192):
-                    remaining = self.max_bytes - total
+                    remaining = cap - total
                     if remaining <= 0:
                         break
                     chunks.append(chunk[:remaining])

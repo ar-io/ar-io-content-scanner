@@ -69,6 +69,10 @@ class Settings:
     # Rendered DOM scanning
     rendered_dom_scan_enabled: bool = True
 
+    # Decode SingleFile/SingleFileZ web archives and scan the real page inside
+    # (instead of the blank self-extraction wrapper).
+    archive_decode_enabled: bool = True
+
     # Content limits
     max_scan_bytes: int = 262144  # 256KB
     scan_timeout_ms: int = 10000
@@ -431,6 +435,10 @@ def load_settings() -> Settings:
         == "true",
         rendered_dom_scan_enabled=os.environ.get(
             "RENDERED_DOM_SCAN_ENABLED", "true"
+        ).lower()
+        == "true",
+        archive_decode_enabled=os.environ.get(
+            "ARCHIVE_DECODE_ENABLED", "true"
         ).lower()
         == "true",
         max_scan_bytes=max_scan_bytes,
