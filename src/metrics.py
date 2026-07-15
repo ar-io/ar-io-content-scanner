@@ -49,6 +49,7 @@ class ScanMetrics:
         # Backfill metrics
         self.backfill_files_scanned = 0
         self.backfill_malicious_found = 0
+        self.backfill_unresolved = 0
         self.backfill_last_sweep_at = 0
         self.backfill_sweeps_completed = 0
         # Edge-cache revalidation metrics
@@ -158,6 +159,7 @@ class ScanMetrics:
             self.backfill_files_scanned += stats.get("scanned", 0)
             self.backfill_files_scanned += stats.get("skipped_not_html", 0)
             self.backfill_malicious_found += stats.get("malicious", 0)
+            self.backfill_unresolved += stats.get("unresolved", 0)
             self.backfill_last_sweep_at = int(time.time())
             self.backfill_sweeps_completed += 1
 
@@ -182,6 +184,7 @@ class ScanMetrics:
                 "last_webhook_at": int(self.last_webhook_at),
                 "backfill_files_scanned": self.backfill_files_scanned,
                 "backfill_malicious_found": self.backfill_malicious_found,
+                "backfill_unresolved": self.backfill_unresolved,
                 "backfill_last_sweep_at": self.backfill_last_sweep_at,
                 "backfill_sweeps_completed": self.backfill_sweeps_completed,
                 "feed_verdicts_imported": self.feed_verdicts_imported,
@@ -336,6 +339,15 @@ class ScanMetrics:
             lines.append(
                 f"scanner_backfill_malicious_found "
                 f"{self.backfill_malicious_found}"
+            )
+            lines.append(
+                "# HELP scanner_backfill_unresolved "
+                "Malicious/suspicious backfill hits with no resolvable TX ID "
+                "(detected but unblockable)"
+            )
+            lines.append("# TYPE scanner_backfill_unresolved counter")
+            lines.append(
+                f"scanner_backfill_unresolved {self.backfill_unresolved}"
             )
             lines.append(
                 "# HELP scanner_feed_verdicts_imported "

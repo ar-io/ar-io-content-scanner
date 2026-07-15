@@ -245,6 +245,34 @@ class TestBackfillSweep:
         assert "seed-phrase-harvesting" in cached.matched_rules
         db.close()
 
+    def test_malicious_without_txid_marked_unresolved(self):
+        # No gateway DB mapping -> _lookup_tx_ids() returns [] -> the malicious
+        # hit can't be blocked, so it's tagged source='backfill_unresolved' and
+        # counted, rather than left as a bare "backfill" sentinel that reads
+        # like a failed block.
+        tmpdir, _, _, db, _, _, metrics, scanner = self._make_env()
+
+        hash_str = make_hash_str(42)
+        place_file(tmpdir, hash_str, SEED_PHRASE_PHISHING.encode())
+
+        stats = asyncio.get_event_loop().run_until_complete(scanner.sweep())
+
+        assert stats["malicious"] == 1
+        assert stats["unresolved"] == 1
+        assert metrics.backfill_unresolved == 1
+        row = db.conn.execute(
+            "SELECT tx_id, source FROM scan_verdicts WHERE content_hash = ?",
+            (hash_str,),
+        ).fetchone()
+        assert row[0] == "backfill"  # sentinel — no real TX ID
+        assert row[1] == "backfill_unresolved"
+        # excluded from the unblocked-malicious audit by the tx_id filter
+        assert all(
+            item["tx_id"] != "backfill"
+            for item in db.get_recent_malicious_urls()
+        )
+        db.close()
+
     def test_skips_already_cached(self):
         tmpdir, _, settings, db, _, _, metrics, scanner = self._make_env()
 
