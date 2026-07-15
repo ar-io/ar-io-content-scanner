@@ -64,6 +64,35 @@ class NotificationRouter:
                     exc_info=True,
                 )
 
+    async def notify_domain_flagged(
+        self,
+        domain: str,
+        threat_types: list[str],
+        flagged: bool,
+        culprits: list[dict] | None = None,
+    ) -> None:
+        """Dispatch a gateway-domain Safe Browsing alert.
+
+        Always sent when Slack is configured — a flagged gateway domain is a
+        critical, operator-level event regardless of the verdict notification
+        threshold. Fail-open: adapter errors are logged but never raised.
+        """
+        if not self.slack:
+            return
+        try:
+            await self.slack.send_domain_alert(
+                domain=domain,
+                threat_types=threat_types,
+                flagged=flagged,
+                culprits=culprits,
+            )
+        except Exception:
+            logger.error(
+                "notification_domain_slack_error",
+                extra={"domain": domain},
+                exc_info=True,
+            )
+
     async def close(self) -> None:
         if self.slack:
             await self.slack.close()

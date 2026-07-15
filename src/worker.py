@@ -10,6 +10,7 @@ from src.feed.poller import FeedPoller
 from src.gateway_client import GatewayClient
 from src.metrics import ScanMetrics
 from src.models import Verdict
+from src.notifications.router import NotificationRouter
 from src.safe_browsing import SafeBrowsingClient
 from src.scanner import Scanner
 from src.screenshot import ScreenshotService
@@ -30,6 +31,7 @@ class WorkerPool:
         settings: Settings | None = None,
         metrics: ScanMetrics | None = None,
         screenshot: ScreenshotService | None = None,
+        notifier: NotificationRouter | None = None,
     ):
         self.scanner = scanner
         self.db = db
@@ -41,6 +43,7 @@ class WorkerPool:
         self.settings = settings
         self.metrics = metrics
         self.screenshot = screenshot
+        self.notifier = notifier
         self._tasks: list[asyncio.Task] = []
         self._running = False
 
@@ -232,12 +235,15 @@ class WorkerPool:
                 recent = [
                     item for item in all_recent if item["tx_id"]
                 ]
+                google_flagged_hashes: set[str] = set()
                 if recent and self.safe_browsing.api_key:
                     content_urls = [
                         f"{gateway_url}/{item['tx_id']}" for item in recent
                     ]
                     results = await self.safe_browsing.check_urls(content_urls)
                     for item, sb_result in zip(recent, results):
+                        if sb_result.flagged:
+                            google_flagged_hashes.add(item["content_hash"])
                         if self.metrics:
                             self.metrics.record_safe_browsing_check(
                                 sb_result.flagged
@@ -291,6 +297,37 @@ class WorkerPool:
                         "content_urls_checked": urls_checked,
                     },
                 )
+
+                # Slack alert on domain-flag state change only — deduped and
+                # persisted across restarts so we don't re-alert every interval
+                # while the domain stays flagged.
+                if not domain_status.error and self.notifier:
+                    prev_flagged = (
+                        self.db.get_state("sb_domain_flagged", "0") == "1"
+                    )
+                    if domain_status.flagged and not prev_flagged:
+                        culprits = [
+                            {
+                                "tx_id": item["tx_id"],
+                                "verdict": item["verdict"],
+                                "google_flagged": (
+                                    item["content_hash"] in google_flagged_hashes
+                                ),
+                            }
+                            for item in recent
+                        ]
+                        await self.notifier.notify_domain_flagged(
+                            domain,
+                            domain_status.threat_types,
+                            True,
+                            culprits,
+                        )
+                        self.db.save_state("sb_domain_flagged", "1")
+                    elif not domain_status.flagged and prev_flagged:
+                        await self.notifier.notify_domain_flagged(
+                            domain, [], False, None
+                        )
+                        self.db.save_state("sb_domain_flagged", "0")
 
                 await asyncio.sleep(
                     self.settings.safe_browsing_check_interval

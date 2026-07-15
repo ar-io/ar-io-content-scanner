@@ -261,6 +261,129 @@ class SlackNotifier:
             )
             return False
 
+    def _build_domain_blocks(
+        self,
+        domain: str,
+        threat_types: list[str],
+        flagged: bool,
+        culprits: list[dict],
+    ) -> list[dict]:
+        """Build Block Kit blocks for a gateway-domain Safe Browsing alert."""
+        if flagged:
+            header = "\U0001f6a8 Gateway Domain Flagged — Google Safe Browsing"
+        else:
+            header = "✅ Gateway Domain Cleared — Google Safe Browsing"
+
+        threats_text = (
+            ", ".join(f"`{t}`" for t in threat_types) if threat_types else "_none_"
+        )
+        tr_link = (
+            "https://transparencyreport.google.com/safe-browsing/search?url="
+            + domain
+        )
+        fields = [
+            {"type": "mrkdwn", "text": f"*Domain:*\n`{domain}`"},
+            {"type": "mrkdwn", "text": f"*Status:*\n{'Flagged' if flagged else 'Cleared'}"},
+            {"type": "mrkdwn", "text": f"*Threat Types:*\n{threats_text}"},
+            {"type": "mrkdwn", "text": f"*Transparency Report:*\n<{tr_link}|view>"},
+        ]
+        blocks: list[dict] = [
+            {"type": "header", "text": {"type": "plain_text", "text": header, "emoji": True}},
+            {"type": "section", "fields": fields},
+        ]
+
+        if flagged and culprits:
+            google_n = sum(1 for c in culprits if c.get("google_flagged"))
+            lines = []
+            for c in culprits[:10]:
+                tx = c["tx_id"]
+                if self.gateway_public_url:
+                    link = f"<{self.gateway_public_url}/{tx}|{tx[:12]}…>"
+                else:
+                    link = f"`{tx[:12]}…`"
+                mark = " \U0001f534 *Google-flagged*" if c.get("google_flagged") else ""
+                blocked = " – _blocked_" if c.get("blocked") else ""
+                lines.append(f"• {link} — `{c.get('verdict', '?')}`{mark}{blocked}")
+            more = len(culprits) - 10
+            if more > 0:
+                lines.append(f"_…and {more} more_")
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*Recent malicious content on this domain (likely cause):*\n"
+                    + "\n".join(lines),
+                },
+            })
+            if google_n:
+                blocks.append({
+                    "type": "context",
+                    "elements": [{
+                        "type": "mrkdwn",
+                        "text": f"\U0001f50e Google independently flags *{google_n}* "
+                        "of these URL(s) via the Lookup API.",
+                    }],
+                })
+
+        if flagged:
+            blocks.append({
+                "type": "context",
+                "elements": [{
+                    "type": "mrkdwn",
+                    "text": "Once the offending content is blocked, request a review in "
+                    "Google Search Console / Safe Browsing to delist the domain.",
+                }],
+            })
+        return blocks
+
+    async def send_domain_alert(
+        self,
+        domain: str,
+        threat_types: list[str],
+        flagged: bool,
+        culprits: list[dict] | None = None,
+    ) -> bool:
+        """Post a gateway-domain Safe Browsing alert to Slack.
+
+        ``culprits`` is a list of recent malicious/suspicious items, each a dict
+        with ``tx_id``, ``verdict``, and optionally ``google_flagged``/``blocked``.
+        ``flagged=False`` posts a recovery ("cleared") message. Fail-open.
+        """
+        try:
+            blocks = self._build_domain_blocks(
+                domain, threat_types, flagged, culprits or []
+            )
+            fallback = (
+                f"Gateway domain {domain} flagged by Google Safe Browsing"
+                if flagged
+                else f"Gateway domain {domain} cleared by Google Safe Browsing"
+            )
+            resp = await self._client.post(
+                f"{SLACK_API_BASE}/chat.postMessage",
+                json={
+                    "channel": self.channel_id,
+                    "text": fallback,
+                    "blocks": blocks,
+                },
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.error(
+                    "slack_domain_post_failed",
+                    extra={"error": data.get("error", "unknown"), "domain": domain},
+                )
+                return False
+            logger.info(
+                "slack_domain_alert_sent",
+                extra={"domain": domain, "flagged": flagged},
+            )
+            return True
+        except Exception:
+            logger.error(
+                "slack_domain_send_error", extra={"domain": domain}, exc_info=True
+            )
+            return False
+
     async def update_message(
         self,
         channel: str,

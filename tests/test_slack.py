@@ -518,3 +518,76 @@ class TestFailOpen:
             matched_rules=["rule1"],
             ml_score=0.99,
         )
+
+
+class TestDomainAlertFormatting:
+    def _slack(self):
+        return SlackNotifier(
+            bot_token="xoxb-test",
+            channel_id="C12345",
+            gateway_public_url="https://ar-io.example.com",
+        )
+
+    def test_flagged_header_and_domain(self):
+        blocks = self._slack()._build_domain_blocks(
+            domain="ar-io.dev",
+            threat_types=["SOCIAL_ENGINEERING"],
+            flagged=True,
+            culprits=[],
+        )
+        assert blocks[0]["type"] == "header"
+        assert "Flagged" in blocks[0]["text"]["text"]
+        # domain + threat types rendered in fields
+        rendered = json.dumps(blocks)
+        assert "ar-io.dev" in rendered
+        assert "SOCIAL_ENGINEERING" in rendered
+
+    def test_cleared_header(self):
+        blocks = self._slack()._build_domain_blocks(
+            domain="ar-io.dev", threat_types=[], flagged=False, culprits=[]
+        )
+        assert "Cleared" in blocks[0]["text"]["text"]
+
+    def test_culprit_txids_listed_with_links_and_google_mark(self):
+        culprits = [
+            {"tx_id": "A" * 43, "verdict": "malicious", "google_flagged": True},
+            {"tx_id": "B" * 43, "verdict": "suspicious", "google_flagged": False},
+        ]
+        blocks = self._slack()._build_domain_blocks(
+            domain="ar-io.dev",
+            threat_types=["SOCIAL_ENGINEERING"],
+            flagged=True,
+            culprits=culprits,
+        )
+        rendered = json.dumps(blocks)
+        # tx link built from gateway public url
+        assert "https://ar-io.example.com/" + "A" * 43 in rendered
+        # google-flagged marker present, and the Lookup-API corroboration line
+        assert "Google-flagged" in rendered
+        assert "Google independently flags" in rendered
+
+    def test_culprit_list_truncated_at_ten(self):
+        culprits = [
+            {"tx_id": f"tx{i:041d}", "verdict": "malicious"} for i in range(15)
+        ]
+        blocks = self._slack()._build_domain_blocks(
+            domain="ar-io.dev", threat_types=["MALWARE"], flagged=True, culprits=culprits
+        )
+        rendered = json.dumps(blocks)
+        assert "and 5 more" in rendered
+
+    async def test_notify_domain_flagged_dispatches_to_slack(self):
+        slack = AsyncMock()
+        router = NotificationRouter(slack=slack, threshold="malicious")
+        await router.notify_domain_flagged(
+            domain="ar-io.dev",
+            threat_types=["SOCIAL_ENGINEERING"],
+            flagged=True,
+            culprits=[{"tx_id": "x" * 43, "verdict": "malicious"}],
+        )
+        slack.send_domain_alert.assert_awaited_once()
+
+    async def test_notify_domain_flagged_noop_without_slack(self):
+        router = NotificationRouter(slack=None, threshold="malicious")
+        # should not raise
+        await router.notify_domain_flagged("ar-io.dev", ["MALWARE"], True, None)
