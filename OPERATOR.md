@@ -472,10 +472,15 @@ The admin dashboard's **Dashboard** tab shows backfill status including files sc
 
 ```bash
 # Check backfill progress in metrics
-curl http://localhost:3100/metrics | jq '{backfill_files_scanned, backfill_malicious_found, backfill_sweeps_completed}'
+curl http://localhost:3100/metrics | jq '{backfill_files_scanned, backfill_malicious_found, backfill_unresolved, backfill_sweeps_completed}'
 
 # Watch backfill logs
 docker compose logs content-scanner | grep backfill
+
+# backfill_unresolved counts malicious/suspicious hits whose hash could not be
+# mapped to a TX ID (detected but unblockable — usually transient or unindexed
+# content). Investigate via: grep backfill_detection_unresolvable
+docker compose logs content-scanner | grep backfill_detection_unresolvable
 ```
 
 ### Notes

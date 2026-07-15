@@ -86,6 +86,7 @@ def build_admin_router(app_state) -> APIRouter:
                 "enabled": settings.backfill_enabled,
                 "files_scanned": int(db.get_state("backfill_files_scanned", "0")),
                 "malicious_found": int(db.get_state("backfill_malicious_found", "0")),
+                "unresolved_found": int(db.get_state("backfill_unresolved_found", "0")),
                 "sweeps_completed": int(db.get_state("backfill_sweeps_completed", "0")),
                 "last_sweep_at": int(db.get_state("backfill_last_sweep_at", "0")) or None,
                 "running": bool(

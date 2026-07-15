@@ -224,6 +224,7 @@ class BackfillScanner:
             "suspicious": 0,
             "clean": 0,
             "blocked": 0,
+            "unresolved": 0,
             "errors": 0,
         }
 
@@ -235,6 +236,7 @@ class BackfillScanner:
         # Save baseline so intermediate + final writes don't double-count
         prev_scanned = int(self.db.get_state("backfill_files_scanned", "0"))
         prev_malicious = int(self.db.get_state("backfill_malicious_found", "0"))
+        prev_unresolved = int(self.db.get_state("backfill_unresolved_found", "0"))
 
         logger.info(
             "backfill_sweep_started",
@@ -324,6 +326,10 @@ class BackfillScanner:
             self.db.save_state(
                 "backfill_malicious_found",
                 str(prev_malicious + stats["malicious"]),
+            )
+            self.db.save_state(
+                "backfill_unresolved_found",
+                str(prev_unresolved + stats["unresolved"]),
             )
             self.db.save_state("backfill_sweeps_completed", str(prev_sweeps + 1))
             self.db.save_state("backfill_last_sweep_at", str(int(time.time())))
@@ -458,7 +464,16 @@ class BackfillScanner:
             if tx_ids:
                 tx_id = tx_ids[0]
 
-        # 6. Cache verdict
+        # 6. Cache verdict. A malicious/suspicious hit with no resolvable TX ID
+        # cannot be blocked (nothing to send to block-data), so tag it distinctly
+        # with source="backfill_unresolved" rather than leaving a bare "backfill"
+        # sentinel that reads like a failed block. Still persisted so
+        # has_verdict() dedupes it on future sweeps, and excluded from the
+        # unblocked-malicious audit by the existing tx_id='backfill' filter.
+        unresolved = (
+            result.verdict in (Verdict.MALICIOUS, Verdict.SUSPICIOUS)
+            and not tx_ids
+        )
         try:
             self.db.save_verdict(
                 content_hash=hash_str,
@@ -467,11 +482,23 @@ class BackfillScanner:
                 matched_rules=json.dumps(result.matched_rules),
                 ml_score=result.ml_score,
                 scanner_version=self.settings.scanner_version,
+                source="backfill_unresolved" if unresolved else "local",
             )
         except Exception:
             logger.warning(
                 "backfill_verdict_cache_failed",
                 extra={"content_hash": hash_str},
+            )
+
+        if unresolved:
+            stats["unresolved"] += 1
+            logger.warning(
+                "backfill_detection_unresolvable",
+                extra={
+                    "content_hash": hash_str,
+                    "verdict": result.verdict.value,
+                    "rules": result.matched_rules,
+                },
             )
 
         self.metrics.record_scan(result.verdict, result.scan_duration_ms)
