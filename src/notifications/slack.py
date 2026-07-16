@@ -261,6 +261,62 @@ class SlackNotifier:
             )
             return False
 
+    async def send_burst_rollup(
+        self, count: int, breakdown: dict[str, int]
+    ) -> bool:
+        """Post one summary for a burst of auto-blocked malicious content.
+
+        Used instead of per-item alerts when detections flood in. Only
+        already-blocked (handled) items are ever rolled up — actionable alerts
+        are sent individually by the router. Fail-open: logged, never raised.
+        """
+        try:
+            lines = [
+                f"• {n}× `{rules}`"
+                for rules, n in sorted(breakdown.items(), key=lambda kv: -kv[1])
+            ]
+            header = (
+                f":no_entry: *{count} malicious item"
+                f"{'s' if count != 1 else ''} auto-blocked* (burst summary)"
+            )
+            blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": header}}]
+            if lines:
+                blocks.append(
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": "\n".join(lines)},
+                    }
+                )
+            resp = await self._client.post(
+                f"{SLACK_API_BASE}/chat.postMessage",
+                json={
+                    "channel": self.channel_id,
+                    "text": f"{count} malicious auto-blocked (burst summary)",
+                    "blocks": blocks,
+                },
+            )
+            data = resp.json()
+            if not data.get("ok"):
+                logger.error(
+                    "slack_rollup_post_failed",
+                    extra={"error": data.get("error", "unknown"), "count": count},
+                )
+                return False
+            logger.info(
+                "slack_rollup_sent",
+                extra={
+                    "count": count,
+                    "channel": self.channel_id,
+                    "ts": data.get("ts"),
+                },
+            )
+            return True
+        except Exception:
+            logger.error(
+                "slack_rollup_send_error", extra={"count": count}, exc_info=True
+            )
+            return False
+
     def _build_domain_blocks(
         self,
         domain: str,
