@@ -147,6 +147,15 @@ class Settings:
     slack_notification_threshold: str = "malicious"  # or "suspicious"
 
     # Email intake (M365)
+    # ArNS gateway domains — used by email intake to detect ArNS URLs
+    # (e.g., angelferno.ar.io) and resolve them to TX IDs for scanning.
+    arns_gateway_domains: tuple[str, ...] = (
+        "ar.io",
+        "turbo-gateway.com",
+        "ardrive.net",
+        "ar-io.dev",
+    )
+
     email_intake_enabled: bool = False
     email_intake_tenant_id: str = ""
     email_intake_client_id: str = ""
@@ -360,6 +369,17 @@ def load_settings() -> Settings:
         )
 
     # Email intake (M365) settings
+    # ArNS gateway domains (configurable for operators with custom domains)
+    arns_domains_raw = os.environ.get("ARNS_GATEWAY_DOMAINS", "")
+    if arns_domains_raw.strip():
+        arns_gateway_domains = tuple(
+            d.strip() for d in arns_domains_raw.split(",") if d.strip()
+        )
+    else:
+        arns_gateway_domains = (
+            "ar.io", "turbo-gateway.com", "ardrive.net", "ar-io.dev",
+        )
+
     email_intake_enabled = (
         os.environ.get("EMAIL_INTAKE_ENABLED", "false").lower() == "true"
     )
@@ -483,6 +503,7 @@ def load_settings() -> Settings:
         slack_signing_secret=slack_signing_secret,
         slack_app_token=slack_app_token,
         slack_notification_threshold=slack_notification_threshold,
+        arns_gateway_domains=arns_gateway_domains,
         email_intake_enabled=email_intake_enabled,
         email_intake_tenant_id=email_intake_tenant_id,
         email_intake_client_id=email_intake_client_id,

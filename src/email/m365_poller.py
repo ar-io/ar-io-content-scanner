@@ -13,8 +13,10 @@ import logging
 
 import httpx
 
+from src.config import Settings
 from src.db import ScannerDB
-from src.email.tx_extractor import extract_all_tx_ids
+from src.email.tx_extractor import extract_all
+from src.gateway_client import GatewayClient
 from src.notifications.router import NotificationRouter
 
 logger = logging.getLogger("scanner.email")
@@ -39,7 +41,9 @@ class M365EmailPoller:
         mailbox: str,
         poll_interval: int,
         db: ScannerDB,
+        gateway: GatewayClient | None = None,
         notifier: NotificationRouter | None = None,
+        arns_gateway_domains: tuple[str, ...] = (),
     ):
         self.tenant_id = tenant_id
         self.client_id = client_id
@@ -47,7 +51,9 @@ class M365EmailPoller:
         self.mailbox = mailbox
         self.poll_interval = poll_interval
         self.db = db
+        self.gateway = gateway
         self.notifier = notifier
+        self.arns_gateway_domains = arns_gateway_domains
 
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
         self._task: asyncio.Task | None = None
@@ -147,7 +153,28 @@ class M365EmailPoller:
                 # since HTML often contains the same URLs as plain text
                 text_body, html_body = body_content, body_content
 
-            tx_ids = extract_all_tx_ids(text_body, html_body)
+            extraction = extract_all(
+                text_body, html_body,
+                arns_domains=self.arns_gateway_domains or None,
+            )
+            tx_ids = list(extraction.tx_ids)
+
+            # Resolve ArNS names to TX IDs via the gateway
+            resolved_arns: list[tuple[str, str]] = []  # (name, tx_id)
+            if extraction.arns_names and self.gateway:
+                for name in extraction.arns_names:
+                    try:
+                        resolved_tx_id = await self._resolve_arns_name(name)
+                        if resolved_tx_id:
+                            resolved_arns.append((name, resolved_tx_id))
+                            if resolved_tx_id not in tx_ids:
+                                tx_ids.append(resolved_tx_id)
+                    except Exception:
+                        logger.warning(
+                            "Failed to resolve ArNS name",
+                            extra={"name": name},
+                            exc_info=True,
+                        )
 
             enqueued = 0
             already_known = 0
@@ -173,6 +200,8 @@ class M365EmailPoller:
                     "sender": sender,
                     "subject": subject,
                     "tx_ids_found": len(tx_ids),
+                    "arns_names_found": len(extraction.arns_names),
+                    "arns_resolved": len(resolved_arns),
                     "tx_ids_enqueued": enqueued,
                     "message_id": msg_id,
                 },
@@ -190,20 +219,29 @@ class M365EmailPoller:
                         tx_list = ", ".join(tx_ids[:20])
                         if len(tx_ids) > 20:
                             tx_list += f" ... and {len(tx_ids) - 20} more"
+                        arns_info = ""
+                        if resolved_arns:
+                            arns_info = "\nArNS names resolved: " + ", ".join(
+                                f"{name} → `{tid[:8]}…`"
+                                for name, tid in resolved_arns
+                            )
                         text = (
                             f"*Email abuse report processed*\n"
                             f"From: {safe_sender}\n"
                             f"Subject: {safe_subject}\n"
                             f"TX IDs found: {len(tx_ids)} "
-                            f"(enqueued: {enqueued})\n"
+                            f"(enqueued: {enqueued}){arns_info}\n"
                             f"```{tx_list}```"
                         )
                     else:
+                        # Include email body snippet so operator can act manually
+                        body_preview = text_body[:500].replace("`", "'").replace("*", "").replace("_", "")
                         text = (
                             f":warning: *Email abuse report — no TX IDs found*\n"
                             f"From: {safe_sender}\n"
                             f"Subject: {safe_subject}\n"
-                            f"_Check email manually or update extraction patterns_"
+                            f"_Check email manually or update extraction patterns_\n"
+                            f"```{body_preview}```"
                         )
 
                     await self.notifier.slack._client.post(
@@ -233,6 +271,45 @@ class M365EmailPoller:
                     "Skipping mark-as-read — TX IDs found but none enqueued or known",
                     extra={"message_id": msg_id, "tx_ids": len(tx_ids)},
                 )
+
+    # ------------------------------------------------------------------
+    # ArNS resolution
+    # ------------------------------------------------------------------
+
+    async def _resolve_arns_name(self, name: str) -> str | None:
+        """Resolve an ArNS name to a TX ID via the gateway.
+
+        Calls GET /ar-io/resolver/{name} on the gateway. Returns the TX ID
+        if the name resolves, None otherwise.
+        """
+        if not self.gateway:
+            return None
+        try:
+            resp = await self.gateway._client.get(
+                f"/ar-io/resolver/{name}",
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "ArNS name did not resolve",
+                    extra={"name": name, "status": resp.status_code},
+                )
+                return None
+            data = resp.json()
+            # The resolver returns txId for the resolved content
+            tx_id = data.get("txId") or data.get("processId")
+            if tx_id:
+                logger.info(
+                    "Resolved ArNS name to TX ID",
+                    extra={"name": name, "tx_id": tx_id},
+                )
+            return tx_id
+        except Exception:
+            logger.warning(
+                "Error resolving ArNS name",
+                extra={"name": name},
+                exc_info=True,
+            )
+            return None
 
     # ------------------------------------------------------------------
     # Graph API helpers

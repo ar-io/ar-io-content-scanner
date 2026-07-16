@@ -1,14 +1,16 @@
 """Extract Arweave TX IDs from abuse report email content.
 
 Ports the extraction logic from the legacy suspected-txs Lambda (JavaScript)
-to Python. Three strategies in priority order:
+to Python. Four strategies in priority order:
 
 1. URL-based extraction (gateway URLs like arweave.net/<txid>)
-2. Sandbox subdomain extraction (base32-encoded TX IDs in subdomains)
-3. Standalone TX ID fallback (bare 43-char base64url strings)
+2. ArNS name extraction (subdomain URLs like angelferno.ar.io — returns names,
+   which the caller resolves to TX IDs via the gateway)
+3. Sandbox subdomain extraction (base32-encoded TX IDs in subdomains)
+4. Standalone TX ID fallback (bare 43-char base64url strings)
 
-URL + sandbox extraction is tried first. Standalone is only used as a fallback
-when no URL/sandbox matches are found, since standalone matching can produce
+URL + ArNS + sandbox extraction is tried first. Standalone is only used as a
+fallback when no other matches are found, since standalone matching can produce
 false positives from DKIM signatures and other email header fragments.
 """
 from __future__ import annotations
@@ -98,6 +100,67 @@ def extract_tx_ids_from_urls(content: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# ArNS name extraction
+# ---------------------------------------------------------------------------
+
+# Default gateway domains that serve ArNS names as subdomains.
+# Overridden at runtime via Settings.arns_gateway_domains.
+_DEFAULT_ARNS_DOMAINS = ("ar.io", "turbo-gateway.com", "ardrive.net", "ar-io.dev")
+
+
+def _build_arns_pattern(domains: tuple[str, ...]) -> re.Pattern[str]:
+    """Build a regex that matches ArNS subdomains on the given gateway domains.
+
+    Matches URLs like:
+        http://angelferno.ar.io
+        https://something.turbo-gateway.com/path
+        angelferno[.]ar[.]io  (defanged)
+
+    Excludes:
+        - 52-char base32 sandbox subdomains (handled by sandbox extraction)
+        - Bare domain with no subdomain (e.g., ar.io itself)
+    """
+    escaped = [d.replace(".", r"(?:\[\.\]|\.)") for d in domains]
+    domain_alt = "|".join(escaped)
+    return re.compile(
+        r"(?:https?://|//)?([a-zA-Z0-9][a-zA-Z0-9_-]{0,50})"  # ArNS name (1-51 chars, not 52 = sandbox)
+        r"(?:\[\.\]|\.)"  # dot or defanged dot
+        r"(?:" + domain_alt + r")"
+        r"(?=[/\s\"'<>#?]|$)",  # terminator
+        re.IGNORECASE,
+    )
+
+
+_ARNS_PATTERN = _build_arns_pattern(_DEFAULT_ARNS_DOMAINS)
+
+
+def extract_arns_names(
+    content: str,
+    domains: tuple[str, ...] | None = None,
+) -> list[str]:
+    """Extract ArNS names from URLs with gateway subdomains.
+
+    Returns a list of ArNS names (NOT TX IDs). The caller must resolve
+    these to TX IDs via the gateway's ``/ar-io/resolver/{name}`` endpoint.
+
+    Args:
+        content: Email body text to search.
+        domains: Gateway domains to match. Defaults to common ar.io domains.
+    """
+    pattern = (
+        _build_arns_pattern(domains) if domains is not None else _ARNS_PATTERN
+    )
+    names: set[str] = set()
+    for match in pattern.finditer(content):
+        name = match.group(1).lower()
+        # Skip 52-char matches (those are sandbox subdomains, not ArNS)
+        if len(name) == 52:
+            continue
+        names.add(name)
+    return list(names)
+
+
+# ---------------------------------------------------------------------------
 # Sandbox subdomain extraction
 # ---------------------------------------------------------------------------
 
@@ -169,45 +232,70 @@ def extract_standalone_tx_ids(content: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def extract_all_tx_ids(text: str, html: str = "") -> list[str]:
-    """Extract TX IDs from email content using all strategies.
+class ExtractionResult:
+    """Result of TX ID / ArNS name extraction from an email."""
+
+    __slots__ = ("tx_ids", "arns_names")
+
+    def __init__(self, tx_ids: list[str], arns_names: list[str]):
+        self.tx_ids = tx_ids
+        self.arns_names = arns_names
+
+
+def extract_all(
+    text: str,
+    html: str = "",
+    arns_domains: tuple[str, ...] | None = None,
+) -> ExtractionResult:
+    """Extract TX IDs and ArNS names from email content.
 
     Combines ``text`` and ``html`` bodies, then:
     1. Tries URL-based extraction (highest confidence)
-    2. Tries sandbox subdomain extraction
-    3. If any URL/sandbox matches found, returns those (deduplicated)
-    4. Otherwise falls back to standalone extraction (may have false positives)
+    2. Tries ArNS name extraction (subdomain URLs like angelferno.ar.io)
+    3. Tries sandbox subdomain extraction (base32-encoded TX IDs)
+    4. If any URL/sandbox matches found, returns those + ArNS names
+    5. Otherwise falls back to standalone extraction (may have false positives)
 
-    Returns a deduplicated list of TX IDs.
+    Returns an ``ExtractionResult`` with deduplicated TX IDs and ArNS names.
+    ArNS names need to be resolved to TX IDs by the caller via the gateway.
     """
     combined = f"{text}\n{html}"
 
     # URL-based extraction (most reliable)
     url_tx_ids = extract_tx_ids_from_urls(combined)
 
+    # ArNS name extraction
+    arns_names = extract_arns_names(combined, domains=arns_domains)
+
     # Sandbox subdomain extraction
     sandbox_tx_ids = extract_tx_ids_from_sandbox_subdomains(combined)
 
     combined_url_tx_ids = url_tx_ids + sandbox_tx_ids
 
-    if combined_url_tx_ids:
-        # Deduplicate while preserving order
+    if combined_url_tx_ids or arns_names:
         seen: set[str] = set()
         result: list[str] = []
         for tx_id in combined_url_tx_ids:
             if tx_id not in seen:
                 seen.add(tx_id)
                 result.append(tx_id)
-        return result
+        return ExtractionResult(tx_ids=result, arns_names=arns_names)
 
     # Fallback: standalone regex for emails with bare TX IDs
     standalone_tx_ids = extract_standalone_tx_ids(combined)
 
-    # Deduplicate
-    seen = set()
-    result = []
+    seen: set[str] = set()
+    result: list[str] = []
     for tx_id in standalone_tx_ids:
         if tx_id not in seen:
             seen.add(tx_id)
             result.append(tx_id)
-    return result
+    return ExtractionResult(tx_ids=result, arns_names=[])
+
+
+def extract_all_tx_ids(text: str, html: str = "") -> list[str]:
+    """Legacy wrapper — returns only TX IDs (no ArNS names).
+
+    Kept for backward compatibility. New callers should use ``extract_all()``.
+    """
+    return extract_all(text, html).tx_ids
