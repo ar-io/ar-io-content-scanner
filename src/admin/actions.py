@@ -51,22 +51,25 @@ async def confirm_block(
     if verdict.verdict != Verdict.MALICIOUS:
         db.update_verdict(content_hash, Verdict.MALICIOUS)
 
-    blocked = False
-    if scanner_mode == "enforce":
-        rules = json.loads(verdict.matched_rules or "[]")
-        # Propagate a meaningful block reason to the gateway. Slack/dashboard
-        # confirmations pass `notes` (e.g. "Confirmed via Slack"); enrich it
-        # with the triggering rules (or the verdict when no rules matched) so
-        # the gateway's audit trail distinguishes a human confirm from an
-        # automatic block. Empty notes -> None so block_data keeps its own
-        # "Auto-blocked: <rules>" default.
-        detail = ", ".join(rules) if rules else verdict.verdict.value
-        gw_notes = f"{notes} ({detail})" if notes else None
-        blocked = await gateway.block_data(
-            verdict.tx_id, content_hash, rules, notes=gw_notes
-        )
-        if blocked:
-            db.mark_blocked(content_hash)
+    # An explicit admin confirmation (Slack button or dashboard) always blocks,
+    # regardless of SCANNER_MODE. dry-run only suppresses AUTOMATIC blocks from
+    # the scan pipeline; a human decision is authoritative and mirrors
+    # POST /api/admin/block, which blocks unconditionally. `scanner_mode` is
+    # retained for the audit log only.
+    rules = json.loads(verdict.matched_rules or "[]")
+    # Propagate a meaningful block reason to the gateway. Slack/dashboard
+    # confirmations pass `notes` (e.g. "Confirmed via Slack"); enrich it
+    # with the triggering rules (or the verdict when no rules matched) so
+    # the gateway's audit trail distinguishes a human confirm from an
+    # automatic block. Empty notes -> None so block_data keeps its own
+    # "Auto-blocked: <rules>" default.
+    detail = ", ".join(rules) if rules else verdict.verdict.value
+    gw_notes = f"{notes} ({detail})" if notes else None
+    blocked = await gateway.block_data(
+        verdict.tx_id, content_hash, rules, notes=gw_notes
+    )
+    if blocked:
+        db.mark_blocked(content_hash)
 
     # Export to phishing training data for ML retraining
     try:
@@ -98,6 +101,7 @@ async def confirm_block(
             "content_hash": content_hash,
             "tx_id": verdict.tx_id,
             "blocked": blocked,
+            "scanner_mode": scanner_mode,
         },
     )
 
