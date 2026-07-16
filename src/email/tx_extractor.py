@@ -119,11 +119,16 @@ def _build_arns_pattern(domains: tuple[str, ...]) -> re.Pattern[str]:
     Excludes:
         - 52-char base32 sandbox subdomains (handled by sandbox extraction)
         - Bare domain with no subdomain (e.g., ar.io itself)
+
+    Uses a negative lookahead to reject matches where the subdomain is followed
+    by another alphanumeric char before the dot — this prevents truncating a
+    52-char sandbox subdomain to 51 chars and misidentifying it as an ArNS name.
     """
     escaped = [d.replace(".", r"(?:\[\.\]|\.)") for d in domains]
     domain_alt = "|".join(escaped)
     return re.compile(
-        r"(?:https?://|//)?([a-zA-Z0-9][a-zA-Z0-9_-]{0,50})"  # ArNS name (1-51 chars, not 52 = sandbox)
+        r"(?:(?:https?://|//)|(?<=[/\s\"'<>])|(?<=^))"  # must be preceded by URL scheme, whitespace, or start
+        r"([a-zA-Z0-9](?:[a-zA-Z0-9_-]{0,49}[a-zA-Z0-9])?)"  # ArNS name (1-51 chars, no trailing hyphen)
         r"(?:\[\.\]|\.)"  # dot or defanged dot
         r"(?:" + domain_alt + r")"
         r"(?=[/\s\"'<>#?]|$)",  # terminator
@@ -153,9 +158,6 @@ def extract_arns_names(
     names: set[str] = set()
     for match in pattern.finditer(content):
         name = match.group(1).lower()
-        # Skip 52-char matches (those are sandbox subdomains, not ArNS)
-        if len(name) == 52:
-            continue
         names.add(name)
     return list(names)
 
