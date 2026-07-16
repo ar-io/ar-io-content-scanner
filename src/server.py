@@ -160,7 +160,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             mailbox=settings.email_intake_mailbox,
             poll_interval=settings.email_intake_poll_interval,
             db=db,
+            gateway=gateway,
             notifier=notifier,
+            arns_gateway_domains=settings.arns_gateway_domains,
         )
 
     pool = WorkerPool(
