@@ -219,3 +219,82 @@ async def test_block_data_triggers_revalidation() -> None:
     assert revalidation_paths == [f"/raw/{ARWEAVE_ID}", f"/{ARWEAVE_ID}"]
 
     await gateway.close()
+
+
+# ---- sandbox subdomain busting ----
+
+# 43 'A's base64url-decode to 32 zero bytes; base32 of that is 52 'a's.
+_SANDBOX_OF_ARWEAVE_ID = "a" * 52
+
+
+def test_arweave_sandbox_subdomain_matches_ario_scheme() -> None:
+    from src.edge_cache import arweave_sandbox_subdomain
+
+    assert arweave_sandbox_subdomain(ARWEAVE_ID) == _SANDBOX_OF_ARWEAVE_ID
+
+
+def test_arweave_sandbox_subdomain_none_for_non_arweave() -> None:
+    from src.edge_cache import arweave_sandbox_subdomain
+
+    # IPFS CID is not a 32-byte Arweave id; junk is not base64.
+    assert arweave_sandbox_subdomain(CIDV1) is None
+    assert arweave_sandbox_subdomain("not base64!!") is None
+
+
+async def test_sandbox_revalidated_when_host_header_present() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(451)
+
+    cfg = _config(headers=(
+        ("Cache-Control", "no-cache"),
+        ("X-Cache-Bypass", "1"),
+        ("Host", "turbo-gateway.com"),
+    ))
+    revalidator = EdgeCacheRevalidator(cfg, client=_make_client(handler))
+    await revalidator.revalidate(ARWEAVE_ID)
+    await revalidator.close()
+
+    # Base-host paths keep the base Host; the extra sandbox request carries the
+    # base32(id) subdomain Host so nginx busts the origin-isolated cache entry.
+    assert [(r.url.path, r.headers.get("host")) for r in requests] == [
+        (f"/raw/{ARWEAVE_ID}", "turbo-gateway.com"),
+        (f"/{ARWEAVE_ID}", "turbo-gateway.com"),
+        (f"/{ARWEAVE_ID}", f"{_SANDBOX_OF_ARWEAVE_ID}.turbo-gateway.com"),
+    ]
+
+
+async def test_no_sandbox_request_without_host_header() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(451)
+
+    # Default _config has no Host header -> cannot construct sandbox -> skipped.
+    revalidator = EdgeCacheRevalidator(_config(), client=_make_client(handler))
+    await revalidator.revalidate(ARWEAVE_ID)
+    await revalidator.close()
+    assert [r.url.path for r in requests] == [
+        f"/raw/{ARWEAVE_ID}",
+        f"/{ARWEAVE_ID}",
+    ]
+
+
+async def test_ipfs_never_gets_sandbox_request() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(451)
+
+    cfg = _config(headers=(
+        ("X-Cache-Bypass", "1"),
+        ("Host", "turbo-gateway.com"),
+    ))
+    revalidator = EdgeCacheRevalidator(cfg, client=_make_client(handler))
+    await revalidator.revalidate(CIDV1)
+    await revalidator.close()
+    assert [r.url.path for r in requests] == [f"/ipfs/{CIDV1}"]
