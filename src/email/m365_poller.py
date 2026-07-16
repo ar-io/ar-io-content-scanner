@@ -159,7 +159,7 @@ class M365EmailPoller:
             )
             tx_ids = list(extraction.tx_ids)
 
-            # Resolve ArNS names to TX IDs via the gateway
+            # Resolve ArNS names to TX IDs and block the names themselves
             resolved_arns: list[tuple[str, str]] = []  # (name, tx_id)
             if extraction.arns_names and self.gateway:
                 for name in extraction.arns_names:
@@ -169,9 +169,16 @@ class M365EmailPoller:
                             resolved_arns.append((name, resolved_tx_id))
                             if resolved_tx_id not in tx_ids:
                                 tx_ids.append(resolved_tx_id)
+                        # Block the ArNS name itself (prevents re-pointing
+                        # to a different TX ID). Do this regardless of whether
+                        # the name currently resolves.
+                        await self.gateway.block_name(
+                            name,
+                            notes=f"Auto-blocked from abuse email: {subject}",
+                        )
                     except Exception:
                         logger.warning(
-                            "Failed to resolve ArNS name",
+                            "Failed to resolve/block ArNS name",
                             extra={"name": name},
                             exc_info=True,
                         )
