@@ -101,6 +101,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         notifier = NotificationRouter(
             slack=slack_notifier,
             threshold=settings.slack_notification_threshold,
+            aggregation_enabled=settings.notification_aggregation_enabled,
+            aggregation_burst_threshold=settings.notification_aggregation_burst_threshold,
+            aggregation_window_s=settings.notification_aggregation_window_s,
+            aggregation_flush_interval_s=settings.notification_aggregation_flush_interval_s,
         )
 
     # Verdict feed components
@@ -179,6 +183,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if screenshot:
             await screenshot.startup()
         await pool.start()
+        if notifier:
+            notifier.start()  # background burst-rollup flusher
         if email_poller:
             await email_poller.start()
         logger.info(

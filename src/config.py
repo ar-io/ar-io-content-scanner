@@ -145,6 +145,13 @@ class Settings:
     slack_signing_secret: str = ""
     slack_app_token: str = ""  # xapp- app token for Socket Mode button handling
     slack_notification_threshold: str = "malicious"  # or "suspicious"
+    # Burst rollup: during a flood, coalesce auto-blocked (handled) alerts into
+    # a periodic summary instead of one message each. Actionable alerts
+    # (suspicious / dry-run / failed block) are always sent individually.
+    notification_aggregation_enabled: bool = True
+    notification_aggregation_burst_threshold: int = 5  # individual until >N/window
+    notification_aggregation_window_s: float = 60.0
+    notification_aggregation_flush_interval_s: float = 60.0
 
     # Email intake (M365)
     # ArNS gateway domains — used by email intake to detect ArNS URLs
@@ -347,6 +354,25 @@ def load_settings() -> Settings:
     slack_channel_id = os.environ.get("SLACK_CHANNEL_ID", "")
     slack_signing_secret = os.environ.get("SLACK_SIGNING_SECRET", "")
     slack_app_token = os.environ.get("SLACK_APP_TOKEN", "")
+    notification_aggregation_enabled = (
+        os.environ.get("NOTIFICATION_AGGREGATION_ENABLED", "true").lower() == "true"
+    )
+    notification_aggregation_burst_threshold = int(
+        os.environ.get("NOTIFICATION_AGGREGATION_BURST_THRESHOLD", "5")
+    )
+    if notification_aggregation_burst_threshold < 1:
+        raise ValueError("NOTIFICATION_AGGREGATION_BURST_THRESHOLD must be >= 1")
+    notification_aggregation_window_s = float(
+        os.environ.get("NOTIFICATION_AGGREGATION_WINDOW_S", "60")
+    )
+    notification_aggregation_flush_interval_s = float(
+        os.environ.get("NOTIFICATION_AGGREGATION_FLUSH_INTERVAL_S", "60")
+    )
+    if notification_aggregation_window_s < 1 or notification_aggregation_flush_interval_s < 1:
+        raise ValueError(
+            "NOTIFICATION_AGGREGATION_WINDOW_S / _FLUSH_INTERVAL_S must be >= 1"
+        )
+
     slack_notification_threshold = os.environ.get(
         "SLACK_NOTIFICATION_THRESHOLD", "malicious"
     )
@@ -503,6 +529,10 @@ def load_settings() -> Settings:
         slack_signing_secret=slack_signing_secret,
         slack_app_token=slack_app_token,
         slack_notification_threshold=slack_notification_threshold,
+        notification_aggregation_enabled=notification_aggregation_enabled,
+        notification_aggregation_burst_threshold=notification_aggregation_burst_threshold,
+        notification_aggregation_window_s=notification_aggregation_window_s,
+        notification_aggregation_flush_interval_s=notification_aggregation_flush_interval_s,
         arns_gateway_domains=arns_gateway_domains,
         email_intake_enabled=email_intake_enabled,
         email_intake_tenant_id=email_intake_tenant_id,
