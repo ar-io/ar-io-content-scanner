@@ -84,3 +84,37 @@ class TestBlockDataPassesIdVerbatim:
         assert captured["path"] == "/ar-io/admin/block-data"
         # CID passes through unchanged in the id field
         assert captured["body"]["id"] == CIDV1
+
+
+class TestUnblockDataHitsUnblockEndpoint:
+    @pytest.mark.asyncio
+    async def test_unblock_uses_put_unblock_data(self):
+        """Regression: unblock must call PUT /ar-io/admin/unblock-data. It
+        previously called DELETE /ar-io/admin/block-data, which the gateway
+        never implemented, so dismissals never lifted the block."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["method"] = request.method
+            captured["path"] = request.url.path
+            import json
+
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(200, json={"message": "Content unblocked"})
+
+        client = GatewayClient(gateway_url="http://gateway.test", admin_api_key="k")
+        await client._client.aclose()
+        client._client = httpx.AsyncClient(
+            base_url="http://gateway.test",
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            ok = await client.unblock_data("tx-id-123", "h" * 64)
+        finally:
+            await client.close()
+
+        assert ok is True
+        assert captured["method"] == "PUT"
+        assert captured["path"] == "/ar-io/admin/unblock-data"
+        assert captured["body"]["id"] == "tx-id-123"
+        assert captured["body"]["hash"] == "h" * 64
