@@ -138,14 +138,11 @@ class GatewayClient:
     ) -> bool:
         for attempt in range(2):
             try:
-                resp = await self._client.request(
-                    "DELETE",
-                    "/ar-io/admin/block-data",
+                resp = await self._client.put(
+                    "/ar-io/admin/unblock-data",
                     json={
                         "id": tx_id,
                         "hash": content_hash,
-                        "source": "content-scanner",
-                        "notes": "Admin dismissed as false positive",
                     },
                     headers={
                         "Authorization": f"Bearer {self.admin_api_key}",

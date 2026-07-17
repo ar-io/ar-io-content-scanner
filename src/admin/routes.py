@@ -370,11 +370,13 @@ def build_admin_router(app_state) -> APIRouter:
             db.update_verdict(h, Verdict.CLEAN)
             db.mark_unblocked(h)
 
-            if settings.scanner_mode == "enforce":
-                gateway = _state.gateway
-                success = await gateway.unblock_data(verdict.tx_id, h)
-                if success:
-                    unblocked_tx_ids.append(verdict.tx_id)
+            # Explicit admin dismissal always lifts the gateway block,
+            # regardless of mode (content can be blocked in dry-run via the
+            # admin API). Idempotent if not currently blocked.
+            gateway = _state.gateway
+            success = await gateway.unblock_data(verdict.tx_id, h)
+            if success:
+                unblocked_tx_ids.append(verdict.tx_id)
 
             succeeded += 1
 

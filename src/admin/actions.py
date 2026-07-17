@@ -140,9 +140,11 @@ async def dismiss_false_positive(
     db.update_verdict(content_hash, Verdict.CLEAN)
     db.mark_unblocked(content_hash)
 
-    unblocked = False
-    if scanner_mode == "enforce":
-        unblocked = await gateway.unblock_data(verdict.tx_id, content_hash)
+    # An explicit admin dismissal always lifts the gateway block, regardless of
+    # SCANNER_MODE — content can be blocked in dry-run via the admin API, so a
+    # dry-run node must be able to unblock it. Mirrors confirm_block. The
+    # gateway unblock is idempotent (no-op if not currently blocked).
+    unblocked = await gateway.unblock_data(verdict.tx_id, content_hash)
 
     logger.info(
         "action_dismiss",
@@ -150,6 +152,7 @@ async def dismiss_false_positive(
             "content_hash": content_hash,
             "tx_id": verdict.tx_id,
             "unblocked": unblocked,
+            "scanner_mode": scanner_mode,
         },
     )
 
