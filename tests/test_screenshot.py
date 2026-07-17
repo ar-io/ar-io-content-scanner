@@ -133,6 +133,36 @@ class TestScreenshotService:
         # Verify context cleanup
         mock_context.close.assert_called_once()
 
+    async def test_capture_with_html_uses_set_content(self):
+        """When html is provided, render it in place via set_content instead of
+        navigating. Navigating redirects HTML to an origin-isolated sandbox host
+        that the route filter blocks, producing a blank capture."""
+        mock_page = AsyncMock()
+        mock_context = AsyncMock()
+        mock_context.new_page.return_value = mock_page
+        mock_browser = AsyncMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_browser.is_connected = MagicMock(return_value=True)
+
+        self.service._browser = mock_browser
+
+        async def fake_screenshot(**kwargs):
+            Path(kwargs["path"]).write_bytes(b"\xff\xd8\xff")
+
+        mock_page.screenshot.side_effect = fake_screenshot
+
+        html = "<html><body><h1>flagged</h1></body></html>"
+        result = await self.service.capture("txid789", "hash789", html=html)
+        assert result is True
+
+        # Rendered in place, not navigated.
+        mock_page.set_content.assert_called_once()
+        assert mock_page.set_content.call_args.args[0] == html
+        assert mock_page.set_content.call_args.kwargs["wait_until"] == "networkidle"
+        mock_page.goto.assert_not_called()
+        # Network isolation is still applied.
+        mock_page.route.assert_called_once()
+
     async def test_capture_handles_failure(self):
         mock_context = AsyncMock()
         mock_context.new_page.side_effect = Exception("Browser crash")

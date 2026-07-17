@@ -146,7 +146,9 @@ class ScreenshotService:
             logger.warning("Error scanning screenshot directory for cleanup")
         return deleted
 
-    async def capture(self, tx_id: str, content_hash: str) -> bool:
+    async def capture(
+        self, tx_id: str, content_hash: str, html: str | None = None
+    ) -> bool:
         if self._browser is None:
             return False
         if not self._browser.is_connected():
@@ -190,14 +192,27 @@ class ScreenshotService:
             page.on("dialog", handle_dialog)
 
             try:
-                await page.goto(
-                    url,
-                    wait_until="networkidle",
-                    timeout=self.timeout_ms,
-                )
+                if html is not None:
+                    # Render the already-fetched bytes directly. Navigating to
+                    # the gateway URL 302-redirects HTML to an origin-isolated
+                    # sandbox host (a different origin), which the route filter
+                    # above aborts — producing a blank capture. Rendering the
+                    # content in place avoids the redirect and also works when
+                    # the tx is blocked (451) in enforce mode.
+                    await page.set_content(
+                        html,
+                        wait_until="networkidle",
+                        timeout=self.timeout_ms,
+                    )
+                else:
+                    await page.goto(
+                        url,
+                        wait_until="networkidle",
+                        timeout=self.timeout_ms,
+                    )
             except Exception:
                 logger.debug(
-                    "Navigation timeout or error, capturing current state",
+                    "Render timeout or error, capturing current state",
                     extra={"tx_id": tx_id},
                 )
 
@@ -232,7 +247,12 @@ class ScreenshotService:
                 except Exception:
                     pass
 
-    async def render_dom(self, tx_id: str, timeout_ms: int | None = None) -> str | None:
+    async def render_dom(
+        self,
+        tx_id: str,
+        timeout_ms: int | None = None,
+        html: str | None = None,
+    ) -> str | None:
         """Render a page and return the post-JS-execution DOM as HTML.
 
         Uses the same network-isolated browser context as screenshot capture.
@@ -276,11 +296,22 @@ class ScreenshotService:
             page.on("dialog", handle_dialog)
 
             try:
-                await page.goto(
-                    url,
-                    wait_until="networkidle",
-                    timeout=effective_timeout,
-                )
+                if html is not None:
+                    # Render the already-fetched bytes in place; navigating to
+                    # the gateway URL redirects HTML to a sandbox origin that the
+                    # route filter blocks (and 451s in enforce). set_content keeps
+                    # us on-origin so JS still executes for the second-pass scan.
+                    await page.set_content(
+                        html,
+                        wait_until="networkidle",
+                        timeout=effective_timeout,
+                    )
+                else:
+                    await page.goto(
+                        url,
+                        wait_until="networkidle",
+                        timeout=effective_timeout,
+                    )
             except Exception:
                 logger.debug(
                     "render_dom_navigation_timeout",
