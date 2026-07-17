@@ -111,9 +111,11 @@ class BackfillScanner:
         task.add_done_callback(self._tasks.discard)
         return "started"
 
-    async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
+    async def _capture_screenshot(
+        self, tx_id: str, content_hash: str, html: str | None = None
+    ) -> None:
         try:
-            await self.screenshot.capture(tx_id, content_hash)
+            await self.screenshot.capture(tx_id, content_hash, html=html)
         except Exception:
             logger.warning(
                 "screenshot_capture_failed",
@@ -511,7 +513,7 @@ class BackfillScanner:
             and tx_id != "backfill"
             and self.screenshot
         ):
-            await self._capture_screenshot(tx_id, hash_str)
+            await self._capture_screenshot(tx_id, hash_str, html=html)
 
         # 8. Handle verdict
         if result.verdict == Verdict.MALICIOUS:

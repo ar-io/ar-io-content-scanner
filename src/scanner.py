@@ -186,9 +186,11 @@ class Scanner:
         self.dispatcher = dispatcher
         self.notifier = notifier
 
-    async def _capture_screenshot(self, tx_id: str, content_hash: str) -> None:
+    async def _capture_screenshot(
+        self, tx_id: str, content_hash: str, html: str | None = None
+    ) -> None:
         try:
-            await self.screenshot.capture(tx_id, content_hash)
+            await self.screenshot.capture(tx_id, content_hash, html=html)
         except Exception:
             logger.warning(
                 "screenshot_capture_failed",
@@ -201,10 +203,11 @@ class Scanner:
         loop: asyncio.AbstractEventLoop,
         timeout_s: float,
         static_result: ScanResult,
+        html: str | None = None,
     ) -> ScanResult:
         """Render page in Playwright and re-run rules on the rendered DOM."""
         rendered_html = await self.screenshot.render_dom(
-            tx_id, timeout_ms=self.settings.scan_timeout_ms,
+            tx_id, timeout_ms=self.settings.scan_timeout_ms, html=html,
         )
         if not rendered_html:
             return static_result
@@ -686,7 +689,9 @@ class Scanner:
             ):
                 try:
                     result = await asyncio.wait_for(
-                        self._rendered_dom_scan(tx_id, loop, timeout_s, result),
+                        self._rendered_dom_scan(
+                            tx_id, loop, timeout_s, result, html=html
+                        ),
                         timeout=timeout_s + 15,  # render + parse + evaluate
                     )
                 except asyncio.TimeoutError:
@@ -775,7 +780,7 @@ class Scanner:
             and self.screenshot
             and is_html
         ):
-            await self._capture_screenshot(tx_id, content_hash)
+            await self._capture_screenshot(tx_id, content_hash, html=html)
 
         # Take action
         action = "passed"
