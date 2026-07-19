@@ -169,6 +169,7 @@ class Settings:
     email_intake_client_secret: str = ""
     email_intake_mailbox: str = ""  # e.g., abuse@ar.io
     email_intake_poll_interval: int = 60  # seconds
+    email_intake_trusted_senders: tuple[str, ...] = ()  # empty = use defaults
 
 
 def load_settings() -> Settings:
@@ -416,6 +417,16 @@ def load_settings() -> Settings:
     email_intake_poll_interval = int(
         os.environ.get("EMAIL_INTAKE_POLL_INTERVAL", "60")
     )
+    email_intake_trusted_senders_raw = os.environ.get(
+        "EMAIL_INTAKE_TRUSTED_SENDERS", ""
+    )
+    if email_intake_trusted_senders_raw.strip():
+        email_intake_trusted_senders = tuple(
+            s.strip() for s in email_intake_trusted_senders_raw.split(",")
+            if s.strip()
+        )
+    else:
+        email_intake_trusted_senders = ()  # empty = use defaults in M365EmailPoller
 
     if email_intake_enabled:
         if not email_intake_tenant_id:
@@ -540,4 +551,5 @@ def load_settings() -> Settings:
         email_intake_client_secret=email_intake_client_secret,
         email_intake_mailbox=email_intake_mailbox,
         email_intake_poll_interval=email_intake_poll_interval,
+        email_intake_trusted_senders=email_intake_trusted_senders,
     )

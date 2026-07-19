@@ -3,12 +3,18 @@
 Polls a Microsoft 365 mailbox via the Graph API for unread abuse reports,
 extracts Arweave TX IDs, enqueues them for scanning, and marks emails as read.
 
+Trusted senders (configurable via ``EMAIL_INTAKE_TRUSTED_SENDERS``) get
+auto-scan + auto-block treatment. Emails from untrusted senders are still
+scanned, but results are posted to Slack for manual review — no auto-blocking.
+This prevents griefing via the public abuse@ address.
+
 Uses OAuth2 client credentials flow (app-only, no user login). Requires an
 Azure AD app registration with ``Mail.ReadWrite`` application permission.
 """
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 
 import httpx
@@ -20,6 +26,28 @@ from src.gateway_client import GatewayClient
 from src.notifications.router import NotificationRouter
 
 logger = logging.getLogger("scanner.email")
+
+# Well-known abuse reporters. Used as defaults when
+# EMAIL_INTAKE_TRUSTED_SENDERS is not set.
+DEFAULT_TRUSTED_SENDERS = (
+    # Hosting providers
+    "*@hetzner.com",
+    "*@hetzner.de",
+    "*@ovh.net",
+    "*@ovhcloud.com",
+    # Anti-phishing / brand protection
+    "*@netcraft.com",
+    "*@netcraft.co.uk",
+    # Google
+    "*@google.com",
+    # Domain registrars
+    "*@namecheap.com",
+    "*@cloudflare.com",
+    # Internal team
+    "*@ar.io",
+    "*@ardrive.io",
+    "*@pds.inc",
+)
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
@@ -44,6 +72,7 @@ class M365EmailPoller:
         gateway: GatewayClient | None = None,
         notifier: NotificationRouter | None = None,
         arns_gateway_domains: tuple[str, ...] = (),
+        trusted_senders: tuple[str, ...] = DEFAULT_TRUSTED_SENDERS,
     ):
         self.tenant_id = tenant_id
         self.client_id = client_id
@@ -54,6 +83,7 @@ class M365EmailPoller:
         self.gateway = gateway
         self.notifier = notifier
         self.arns_gateway_domains = arns_gateway_domains
+        self.trusted_senders = tuple(p.lower() for p in trusted_senders)
 
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
         self._task: asyncio.Task | None = None
@@ -89,6 +119,19 @@ class M365EmailPoller:
             self._task = None
         await self._client.aclose()
         logger.info("Email poller stopped")
+
+    # ------------------------------------------------------------------
+    # Sender trust
+    # ------------------------------------------------------------------
+
+    def _is_trusted_sender(self, sender_email: str) -> bool:
+        """Check if the sender matches any trusted sender pattern.
+
+        Patterns support fnmatch-style wildcards: ``*@hetzner.com`` matches
+        any address at hetzner.com, ``phil@pds.inc`` matches exactly.
+        """
+        addr = sender_email.lower().strip()
+        return any(fnmatch.fnmatch(addr, pattern) for pattern in self.trusted_senders)
 
     # ------------------------------------------------------------------
     # Polling loop
@@ -134,10 +177,6 @@ class M365EmailPoller:
                 .get("address", "unknown")
             )
             subject = msg.get("subject", "(no subject)")
-            # Graph API returns body in one format (text or html).
-            # We feed the content to both extraction paths regardless,
-            # since extract_all_tx_ids combines text+html and runs all
-            # regex strategies on the combined content.
             body_obj = msg.get("body", {})
             body_content = body_obj.get("content", "")
             body_type = body_obj.get("contentType", "").lower()
@@ -149,9 +188,9 @@ class M365EmailPoller:
             if body_type == "text":
                 text_body, html_body = body_content, ""
             else:
-                # html or unknown — treat as HTML, also pass as text
-                # since HTML often contains the same URLs as plain text
                 text_body, html_body = body_content, body_content
+
+            trusted = self._is_trusted_sender(sender)
 
             extraction = extract_all(
                 text_body, html_body,
@@ -159,7 +198,7 @@ class M365EmailPoller:
             )
             tx_ids = list(extraction.tx_ids)
 
-            # Resolve ArNS names to TX IDs and block the names themselves
+            # Resolve ArNS names to TX IDs
             resolved_arns: list[tuple[str, str]] = []  # (name, tx_id)
             if extraction.arns_names and self.gateway:
                 for name in extraction.arns_names:
@@ -169,13 +208,12 @@ class M365EmailPoller:
                             resolved_arns.append((name, resolved_tx_id))
                             if resolved_tx_id not in tx_ids:
                                 tx_ids.append(resolved_tx_id)
-                        # Block the ArNS name itself (prevents re-pointing
-                        # to a different TX ID). Do this regardless of whether
-                        # the name currently resolves.
-                        await self.gateway.block_name(
-                            name,
-                            notes=f"Auto-blocked from abuse email: {subject}",
-                        )
+                        # Only auto-block ArNS names from trusted senders
+                        if trusted:
+                            await self.gateway.block_name(
+                                name,
+                                notes=f"Auto-blocked from abuse email: {subject}",
+                            )
                     except Exception:
                         logger.warning(
                             "Failed to resolve/block ArNS name",
@@ -183,29 +221,32 @@ class M365EmailPoller:
                             exc_info=True,
                         )
 
+            # Trusted senders: enqueue TX IDs for scanning (auto-block if
+            # rules match in enforce mode).
+            # Untrusted senders: do NOT enqueue — post to Slack for manual
+            # review only. This prevents griefing via the abuse@ address.
             enqueued = 0
             already_known = 0
-            for tx_id in tx_ids:
-                if self.db.enqueue(
-                    tx_id=tx_id,
-                    content_hash=None,
-                    content_type=None,
-                    data_size=None,
-                ):
-                    enqueued += 1
-                else:
-                    # enqueue returns False for both duplicates and DB errors.
-                    # Check if it's already in verdict cache (already scanned/blocked)
-                    # — if so, it's a known duplicate, not a failure.
-                    existing = self.db.get_verdict(tx_id)
-                    if existing is not None:
-                        already_known += 1
+            if trusted:
+                for tx_id in tx_ids:
+                    if self.db.enqueue(
+                        tx_id=tx_id,
+                        content_hash=None,
+                        content_type=None,
+                        data_size=None,
+                    ):
+                        enqueued += 1
+                    else:
+                        existing = self.db.get_verdict(tx_id)
+                        if existing is not None:
+                            already_known += 1
 
             logger.info(
                 "Processed abuse email",
                 extra={
                     "sender": sender,
                     "subject": subject,
+                    "trusted": trusted,
                     "tx_ids_found": len(tx_ids),
                     "arns_names_found": len(extraction.arns_names),
                     "arns_resolved": len(resolved_arns),
@@ -214,13 +255,12 @@ class M365EmailPoller:
                 },
             )
 
-            # Slack notification summary (send even when 0 TX IDs found
-            # so operators know the email was processed)
+            # Slack notification
             if self.notifier and hasattr(self.notifier, 'slack') and self.notifier.slack:
                 try:
-                    # Sanitize sender/subject to prevent Slack mrkdwn injection
                     safe_sender = sender.replace("`", "'").replace("*", "").replace("_", "")
                     safe_subject = subject.replace("`", "'").replace("*", "").replace("_", "")
+                    trust_badge = ":white_check_mark: Trusted" if trusted else ":warning: Untrusted"
 
                     if tx_ids:
                         tx_list = ", ".join(tx_ids[:20])
@@ -228,24 +268,34 @@ class M365EmailPoller:
                             tx_list += f" ... and {len(tx_ids) - 20} more"
                         arns_info = ""
                         if resolved_arns:
-                            arns_info = "\nArNS names resolved: " + ", ".join(
+                            arns_info = "\nArNS names: " + ", ".join(
                                 f"{name} → `{tid[:8]}…`"
                                 for name, tid in resolved_arns
                             )
-                        text = (
-                            f"*Email abuse report processed*\n"
-                            f"From: {safe_sender}\n"
-                            f"Subject: {safe_subject}\n"
-                            f"TX IDs found: {len(tx_ids)} "
-                            f"(enqueued: {enqueued}){arns_info}\n"
-                            f"```{tx_list}```"
-                        )
+                        if trusted:
+                            text = (
+                                f":white_check_mark: *Abuse report — auto-processing*\n"
+                                f"From: {safe_sender} ({trust_badge})\n"
+                                f"Subject: {safe_subject}\n"
+                                f"TX IDs: {len(tx_ids)} "
+                                f"(enqueued: {enqueued}){arns_info}\n"
+                                f"```{tx_list}```"
+                            )
+                        else:
+                            text = (
+                                f":warning: *Abuse report — manual review required*\n"
+                                f"From: {safe_sender} ({trust_badge})\n"
+                                f"Subject: {safe_subject}\n"
+                                f"TX IDs found: {len(tx_ids)} "
+                                f"— *not auto-blocked* (untrusted sender){arns_info}\n"
+                                f"```{tx_list}```\n"
+                                f"_Use `/admin` dashboard or reply buttons to block._"
+                            )
                     else:
-                        # Include email body snippet so operator can act manually
                         body_preview = text_body[:500].replace("`", "'").replace("*", "").replace("_", "")
                         text = (
-                            f":warning: *Email abuse report — no TX IDs found*\n"
-                            f"From: {safe_sender}\n"
+                            f":warning: *Abuse report — no TX IDs found*\n"
+                            f"From: {safe_sender} ({trust_badge})\n"
                             f"Subject: {safe_subject}\n"
                             f"_Check email manually or update extraction patterns_\n"
                             f"```{body_preview}```"
@@ -264,14 +314,9 @@ class M365EmailPoller:
                         exc_info=True,
                     )
 
-            # Mark as read if we successfully processed the email:
-            # - No TX IDs found (nothing to do)
-            # - Some TX IDs enqueued (new content to scan)
-            # - All TX IDs already known/blocked (duplicates, safe to skip)
-            # Only keep unread if TX IDs were found but NONE could be
-            # enqueued AND none are already known (real DB failure).
+            # Mark as read
             processed = enqueued + already_known
-            if not tx_ids or processed > 0:
+            if not tx_ids or processed > 0 or not trusted:
                 await self._mark_as_read(token, msg_id)
             else:
                 logger.warning(

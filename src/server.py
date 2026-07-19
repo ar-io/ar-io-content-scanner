@@ -167,6 +167,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             gateway=gateway,
             notifier=notifier,
             arns_gateway_domains=settings.arns_gateway_domains,
+            trusted_senders=settings.email_intake_trusted_senders or (),
         )
 
     pool = WorkerPool(
