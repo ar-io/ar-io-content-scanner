@@ -28,7 +28,9 @@ from src.notifications.router import NotificationRouter
 logger = logging.getLogger("scanner.email")
 
 # Well-known abuse reporters. Used as defaults when
-# EMAIL_INTAKE_TRUSTED_SENDERS is not set.
+# EMAIL_INTAKE_TRUSTED_SENDERS is not set. Only includes universally
+# recognized sources — operators should add their own org domains via
+# the EMAIL_INTAKE_TRUSTED_SENDERS env var.
 DEFAULT_TRUSTED_SENDERS = (
     # Hosting providers
     "*@hetzner.com",
@@ -40,13 +42,9 @@ DEFAULT_TRUSTED_SENDERS = (
     "*@netcraft.co.uk",
     # Google
     "*@google.com",
-    # Domain registrars
+    # Domain registrars / CDN
     "*@namecheap.com",
     "*@cloudflare.com",
-    # Internal team
-    "*@ar.io",
-    "*@ardrive.io",
-    "*@pds.inc",
 )
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
